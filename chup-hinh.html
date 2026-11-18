@@ -48,7 +48,7 @@
 </main>
 
 <script src="bootstrap-5.3.8/js/bootstrap.bundle.min.js"></script>
-<script src="js/booth-cloud.js?v=20261117-free-order"></script>
+<script src="js/booth-cloud.js?v=20261118-screen-recording"></script>
 <script type="module">
     import { applyBeautyInPlace } from "./js/beauty-filter.sample.js";
 
@@ -521,7 +521,161 @@
             } catch (e) {}
         }
 
+        var screenRecording = null;
+        var capturedVideo = null;
+        var capturePageClosed = false;
+
+        var recordingBackground = new Image();
+        recordingBackground.src = 'images/ChonKhungThietKe/bg.png';
+        var recordingThumbnails = [];
+
+        function drawRecordingFrame(ctx, canvas, bounds, scale) {
+            function rect(element) {
+                var box = element.getBoundingClientRect();
+                return [(box.left - bounds.left) * scale, (box.top - bounds.top) * scale,
+                    box.width * scale, box.height * scale];
+            }
+
+            function drawBox(element, background) {
+                var box = rect(element);
+                var style = getComputedStyle(element);
+                var radius = style.borderTopLeftRadius;
+                var corner = radius.endsWith('%') ? box[2] * parseFloat(radius) / 100 : parseFloat(radius) * scale;
+                ctx.fillStyle = background || style.backgroundColor;
+                ctx.beginPath();
+                ctx.roundRect(...box, corner || 0);
+                ctx.fill();
+            }
+
+            function drawCover(image, sourceWidth, sourceHeight, box, mirrored) {
+                var [x, y, width, height] = box;
+                var cropScale = Math.max(width / sourceWidth, height / sourceHeight);
+                var cropWidth = width / cropScale;
+                var cropHeight = height / cropScale;
+                ctx.save();
+                if (mirrored) {
+                    ctx.translate(2 * x + width, 0);
+                    ctx.scale(-1, 1);
+                }
+                ctx.drawImage(image, (sourceWidth - cropWidth) / 2, (sourceHeight - cropHeight) / 2,
+                    cropWidth, cropHeight, x, y, width, height);
+                ctx.restore();
+            }
+
+            function drawLabel(element) {
+                var box = rect(element);
+                var style = getComputedStyle(element);
+                ctx.font = style.fontWeight + ' ' + (parseFloat(style.fontSize) * scale) + 'px ' + style.fontFamily;
+                ctx.fillStyle = style.color;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(element.textContent, box[0] + box[2] / 2, box[1] + box[3] / 2);
+            }
+
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (recordingBackground.naturalWidth) {
+                ctx.drawImage(recordingBackground, 0, 0, canvas.width, canvas.height);
+            }
+            frame.querySelectorAll('.capture-back img, .capture-logo').forEach(function (img) {
+                if (img.naturalWidth) ctx.drawImage(img, ...rect(img));
+            });
+            frame.querySelectorAll('.capture-heading, .capture-subtitle, .capture-hint').forEach(drawLabel);
+
+            if (!video.hidden && video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+                drawCover(video, video.videoWidth, video.videoHeight, rect(video), video.classList.contains('mirror'));
+            }
+            if (!countdownEl.hidden) {
+                drawBox(countdownEl);
+                drawLabel(countdownEl);
+            }
+            drawBox(frame.querySelector('.s4-timer'));
+            timerBtns.forEach(function (button) {
+                if (button.classList.contains('active')) drawBox(button);
+                drawLabel(button);
+            });
+            drawBox(btnShutter, '#fff');
+            slots.forEach(function (slot, index) {
+                drawBox(slot);
+                if (!photos[index]) { drawLabel(slot); return; }
+                var thumbnail = recordingThumbnails[index];
+                if (!thumbnail || thumbnail.source !== photos[index]) {
+                    var image = new Image();
+                    image.src = photos[index];
+                    thumbnail = recordingThumbnails[index] = { source: photos[index], image: image };
+                }
+                if (thumbnail.image.naturalWidth) {
+                    drawCover(thumbnail.image, thumbnail.image.naturalWidth, thumbnail.image.naturalHeight, rect(slot), false);
+                }
+            });
+            var flashOpacity = Number(getComputedStyle(flash).opacity);
+            if (flashOpacity > 0) {
+                ctx.fillStyle = 'rgba(255,255,255,' + flashOpacity + ')';
+                ctx.fillRect(...rect(flash));
+            }
+        }
+
+        function startScreenRecording() {
+            var canvas = document.createElement('canvas');
+            if (!window.MediaRecorder || !canvas.captureStream) return;
+            var mimeType = ['video/webm;codecs=vp8', 'video/webm'].find(function (type) {
+                return MediaRecorder.isTypeSupported(type);
+            });
+            var bounds = frame.getBoundingClientRect();
+            if (!mimeType || !bounds.width || !bounds.height) return;
+            recordingThumbnails = [];
+            var scale = Math.min(window.devicePixelRatio || 1, 1920 / Math.max(bounds.width, bounds.height));
+            canvas.width = Math.max(2, Math.round(bounds.width * scale / 2) * 2);
+            canvas.height = Math.max(2, Math.round(bounds.height * scale / 2) * 2);
+            var ctx = canvas.getContext('2d', { alpha: false });
+            var stream;
+            try {
+                var draw = function () { drawRecordingFrame(ctx, canvas, bounds, scale); };
+                draw();
+                var frameRate = 60;
+                stream = canvas.captureStream(frameRate);
+                var recorder = new MediaRecorder(stream, { mimeType: mimeType, videoBitsPerSecond: 8000000 });
+                var chunks = [];
+                var finished = new Promise(function (resolve) {
+                    recorder.ondataavailable = function (event) {
+                        if (event.data.size) chunks.push(event.data);
+                    };
+                    recorder.onstop = function () { resolve(new Blob(chunks, { type: 'video/webm' })); };
+                    recorder.onerror = function () { resolve(null); };
+                });
+                recorder.start(1000);
+                screenRecording = { recorder: recorder, stream: stream, finished: finished, timer: setInterval(draw, 1000 / frameRate) };
+            } catch (error) {
+                if (stream) stream.getTracks().forEach(function (track) { track.stop(); });
+                console.warn('Không thể bắt đầu quay màn hình chụp.', error);
+            }
+        }
+
+        async function stopScreenRecording(discard) {
+            var recording = screenRecording;
+            screenRecording = null;
+            if (!recording) return null;
+            clearInterval(recording.timer);
+            try {
+                if (recording.recorder.state !== 'inactive') recording.recorder.stop();
+                return discard ? null : await recording.finished;
+            } catch (error) {
+                console.warn('Không thể dừng quay màn hình chụp.', error);
+                return null;
+            } finally {
+                recording.stream.getTracks().forEach(function (track) { track.stop(); });
+                recordingThumbnails = [];
+            }
+        }
+
+        window.addEventListener('pagehide', function () {
+            capturePageClosed = true;
+            stopScreenRecording(true);
+        });
+        window.addEventListener('pageshow', function () { capturePageClosed = false; });
+
         function finishSequence() {
+            stopScreenRecording(true);
             shooting = false;
             busy = false;
             if (countdownIv) { clearInterval(countdownIv); countdownIv = null; }
@@ -557,26 +711,44 @@
             }, 1000);
         }
 
+        async function saveCapturedVideo(orderId) {
+            if (!capturedVideo || !capturedVideo.size) return;
+            var controller = new AbortController();
+            var timeout = setTimeout(function () { controller.abort(); }, 20000);
+            try {
+                var response = await fetch('/api/v1/capture-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'video/webm', 'X-Order-Id': orderId },
+                    body: capturedVideo,
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+            } catch (error) {
+                console.warn('Không thể lưu video màn hình.', error);
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
         function saveCapturedPhotos() {
             countdownEl.hidden = true;
             var saveStatus = document.getElementById('saveStatus');
             saveStatus.hidden = false;
             saveStatus.textContent = 'Đang lưu ảnh…';
             btnShutter.disabled = true;
-            window.hoaloEnsureDownloadOrderAsync().then(function (order) {
-                return fetch('/api/v1/capture-photos', {
+            window.hoaloEnsureDownloadOrderAsync().then(async function (order) {
+                var response = await fetch('/api/v1/capture-photos', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ orderId: order.orderId, photos: photos })
                 });
-            }).then(function (r) {
-                if (!r.ok) throw new Error('save photos');
-                return r.json();
-            }).then(function (result) {
+                if (!response.ok) throw new Error('save photos');
+                var result = await response.json();
                 if (!result.ok || !Array.isArray(result.composePhotos) ||
                     result.composePhotos.length !== photos.length) throw new Error('save photos');
                 // Only store URLs for the independent composition copies, not large data URLs.
                 sessionStorage.setItem('photos', JSON.stringify(result.composePhotos));
+                await saveCapturedVideo(order.orderId);
                 location.replace('gan-anh.html');
             }).catch(function () {
                 saveStatus.textContent = 'Lưu ảnh thất bại. Chạm nút chụp để thử lại.';
@@ -591,9 +763,10 @@
                 busy = true;
                 if (countdownIv) { clearInterval(countdownIv); countdownIv = null; }
                 if (idleTimer) idleTimer.cancel();
-                finishTimer = setTimeout(function () {
+                finishTimer = setTimeout(async function () {
                     finishTimer = null;
-                    saveCapturedPhotos();
+                    capturedVideo = await stopScreenRecording();
+                    if (!capturePageClosed) saveCapturedPhotos();
                 }, lastShutterDuration);
                 return;
             }
@@ -606,6 +779,7 @@
             if (busy || shooting) return;
             if (photos.every(Boolean)) { busy = true; saveCapturedPhotos(); return; }
             if (idleTimer) idleTimer.cancel();
+            startScreenRecording();
             var audioReady = unlockAudio();
             busy = true;
             btnShutter.disabled = true;
@@ -614,7 +788,9 @@
                 var empty = photos.findIndex(function (p) { return !p; });
                 if (empty !== -1) current = empty;
             }
-            audioReady.then(function () { beginShot(); });
+            audioReady.then(function () {
+                if (!capturePageClosed) beginShot();
+            });
         });
 
         // Lúc chờ: hiện số giây đang chọn trong vòng tròn (ẩn khi tắt hẹn giờ)

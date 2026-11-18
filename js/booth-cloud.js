@@ -2066,7 +2066,7 @@
         });
 })();
 
-/* Ghi quá trình chụp (nhẹ) rồi ghép vào từng lỗ khung. Không đụng HTML/CSS. */
+/* Ghi quá trình chụp (nhẹ) rồi ghép vào từng lỗ khung. Không đụng HTML/CSS. (đã tắt).
 (function () {
     var page = ((location.pathname || '').split('/').pop() || '').toLowerCase();
     var READY_KEY = 'hoaloClipReady';
@@ -2705,3 +2705,4 @@
         }).then(finishRec, finishRec);
     }
 })();
+*/

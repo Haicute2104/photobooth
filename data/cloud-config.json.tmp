@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "savedAt": "2026-11-18T17:20:57Z",
+  "config": {
+    "takePhotoPrice": 50000,
+    "printPrice": 50000,
+    "onlinePhotoPrice": 50000,
+    "webPrintPrice": 50000,
+    "webSendPrintPrice": 50000,
+    "printMin": 1,
+    "printMax": 10,
+    "paymentTimeoutSeconds": 60,
+    "previewReplaceTimeoutSeconds": 180,
+    "captureTimeoutSeconds": 60,
+    "layoutTimeoutSeconds": 60,
+    "maxTimeWait": 120,
+    "cameraNameKeyword": "R100",
+    "cameraExcludeKeyword": "UGREEN",
+    "cameraCaptureWidth": 1280,
+    "cameraCaptureHeight": 720,
+    "cameraIndex": 2,
+    "cameraProfile": "auto",
+    "urlBase": "https://moments-memories.lumina-x.info",
+    "hideWebPrintQr": true,
+    "deviceID": "LUMINAXHOALO",
+    "deviceId": "LUMINAXHOALO",
+    "printPaperSize": "4x6"
+  }
+}

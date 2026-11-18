@@ -48,16 +48,63 @@ test('two and four frame slots produce four and six shots with sync and async me
     }
 });
 
+test('screen recording captures the portrait canvas and returns WebM for upload', async () => {
+    let trackStopped = false;
+    const stream = { getTracks: () => [{ stop() { trackStopped = true; } }] };
+    const canvas = { getContext: () => ({}), captureStream: fps => { assert.equal(fps, 60); return stream; } };
+    class Recorder {
+        static isTypeSupported() { return true; }
+        constructor(input, options) {
+            assert.equal(input, stream);
+            assert.equal(options.videoBitsPerSecond, 8000000);
+        }
+        start() { this.state = 'recording'; }
+        stop() {
+            this.state = 'inactive';
+            this.ondataavailable({ data: new Blob(['test video']) });
+            this.onstop();
+        }
+    }
+    const context = vm.createContext({
+        screenRecording: null, recordingThumbnails: [], Blob, setInterval, clearInterval,
+        window: { MediaRecorder: Recorder }, MediaRecorder: Recorder,
+        document: { createElement: () => canvas },
+        frame: { getBoundingClientRect: () => ({ width: 1080, height: 1920 }) },
+        drawRecordingFrame() {},
+    });
+    const start = capture.indexOf('        function startScreenRecording()');
+    const end = capture.indexOf("        window.addEventListener('pagehide'", start);
+    vm.runInContext(capture.slice(start, end), context);
+
+    context.startScreenRecording();
+    assert.equal(canvas.width, 1080);
+    assert.equal(canvas.height, 1920);
+    const video = await context.stopScreenRecording();
+    assert.equal(video.type, 'video/webm');
+    assert.equal(await video.text(), 'test video');
+    assert.equal(trackStopped, true);
+    assert.equal(context.screenRecording, null);
+});
+
 test('capture save uses composition photo URLs and supports retry', async () => {
     let succeed = false;
     let navigated = false;
+    let videoUploads = 0;
+    const capturedVideo = { size: 1024 };
     const session = {};
     const context = vm.createContext({
         countdownEl: {}, btnShutter: {}, document: { getElementById: () => ({}) },
         busy: true, photos: ['png1', 'png2', 'png3', 'png4'],
+        capturedVideo, AbortController, setTimeout, clearTimeout,
         window: { hoaloEnsureDownloadOrderAsync: async () => ({ orderId: 'ORDER' }) },
         sessionStorage: storage(session), location: { replace: () => { navigated = true; } },
         fetch: async (url, opts) => {
+            if (url === '/api/v1/capture-video') {
+                assert.equal(opts.headers['X-Order-Id'], 'ORDER');
+                assert.equal(opts.body, capturedVideo);
+                videoUploads++;
+                return { ok: true };
+            }
             assert.equal(url, '/api/v1/capture-photos');
             assert.equal(JSON.parse(opts.body).photos.length, 4);
             return { ok: succeed, json: async () => ({ ok: true,
@@ -65,15 +112,17 @@ test('capture save uses composition photo URLs and supports retry', async () => 
                 composePhotos: [1, 2, 3, 4].map(i => '/public/anh-le-2/ORDER/' + i + '.png') }) };
         },
     });
-    vm.runInContext(capture.slice(capture.indexOf('        function saveCapturedPhotos()'), capture.indexOf('        function afterShot(')), context);
+    vm.runInContext(capture.slice(capture.indexOf('        async function saveCapturedVideo('), capture.indexOf('        function afterShot(')), context);
     context.saveCapturedPhotos();
     await new Promise(setImmediate);
     assert.equal(navigated, false);
     assert.equal(context.busy, false);
+    assert.equal(videoUploads, 0);
     succeed = true;
     context.saveCapturedPhotos();
     await new Promise(setImmediate);
     assert.equal(navigated, true);
+    assert.equal(videoUploads, 1);
     assert.deepEqual(JSON.parse(session.photos), [1, 2, 3, 4].map(i => '/public/anh-le-2/ORDER/' + i + '.png'));
     assert.ok(JSON.parse(session.photos).every(photo => !photo.includes('/public/anh-le/')));
 });

@@ -88,7 +88,7 @@ MAX_CAPTURE_BODY = 256 * 1024 * 1024
 # Video quá trình chụp đã ghép vào lỗ khung. Giữ ít file để khỏi đầy ổ NUC.
 VIDEO_DIR = os.path.join(ROOT, "public", "videos")
 VIDEO_LOCK = threading.Lock()
-MAX_VIDEO_BODY = 16 * 1024 * 1024
+MAX_VIDEO_BODY = 96 * 1024 * 1024
 MAX_VIDEO_FILES = 30
 
 
