@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Gửi ảnh in - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=sf-all-1" rel="stylesheet" />
+    <link href="css/gui-anh.css?v=4" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame phone-flow">
+    <a class="phone-back" id="back" href="chon-khung.html" aria-label="Quay lại"><img src="images/Icons/back.png" alt="Quay lại" /></a>
+    <img class="phone-logo" src="images/ChonKhungThietKe/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+    <h1 class="phone-title" id="title">Chọn khung ảnh</h1>
+    <div class="phone-body" id="body">
+        <p class="phone-empty">Đang tải khung ảnh...</p>
+    </div>
+    <a href="#" class="s2-next disabled" id="btnNext" aria-disabled="true">
+        <img src="images/ChonKhung/Continue.png" alt="Tiếp theo" />
+    </a>
+</main>
+
+<script src="js/booth-cloud.js?v=20261117-free-order"></script>
+<script>
+    (function () {
+        var TAKE = 50000, EXTRA = 20000, MIN_QTY = 1, MAX_QTY = 10;
+        var step = 1, qty = 1, frames = [], selected = null;
+        var body = document.getElementById('body');
+        var title = document.getElementById('title');
+        var back = document.getElementById('back');
+        var btnNext = document.getElementById('btnNext');
+        var idle = 0;
+
+        function armIdle() {
+            clearTimeout(idle);
+            idle = setTimeout(function () {
+                if (window.hoaloGoHome) window.hoaloGoHome();
+                else location.replace('index.html');
+            }, 120000);
+        }
+        document.addEventListener('pointerdown', armIdle);
+        armIdle();
+
+        function money(n) {
+            return n.toLocaleString('vi-VN') + ' VNĐ';
+        }
+
+        function total() {
+            return TAKE + (qty - 1) * EXTRA;
+        }
+
+        function setNextEnabled(on) {
+            if (on) {
+                btnNext.classList.remove('disabled');
+                btnNext.removeAttribute('aria-disabled');
+            } else {
+                btnNext.classList.add('disabled');
+                btnNext.setAttribute('aria-disabled', 'true');
+            }
+        }
+
+        function showFrames() {
+            step = 1;
+            title.textContent = 'Chọn khung ảnh';
+            back.href = 'chon-khung.html';
+            setNextEnabled(!!selected);
+            if (!frames.length) {
+                body.innerHTML = '<p class="phone-empty">Không tải được danh sách khung</p>';
+                return;
+            }
+            var html = '';
+            frames.forEach(function (item, index) {
+                var on = selected && selected.frameRel === item.frameRel ? ' active' : '';
+                var thumb = item.thumbUrl || item.previewUrl || '';
+                html += '<button type="button" class="phone-frame' + on + '" data-i="' + index + '">';
+                html += thumb ? '<img src="' + thumb + '" alt="">' : '<span class="phone-swatch"></span>';
+                html += '<span><b>' + item.sizeLabel + '</b><small>Khung ' + (item.design || '') + '</small></span>';
+                html += '</button>';
+            });
+            body.innerHTML = html;
+            body.querySelectorAll('.phone-frame img').forEach(function (img) {
+                img.addEventListener('error', function () {
+                    if (img.getAttribute('data-tried') !== '1' && img.src.indexOf('-thumb.webp') >= 0) {
+                        img.setAttribute('data-tried', '1');
+                        img.src = img.src.replace('-thumb.webp', '-thumb.png');
+                        return;
+                    }
+                    var span = document.createElement('span');
+                    span.className = 'phone-swatch';
+                    img.replaceWith(span);
+                });
+            });
+            body.querySelectorAll('.phone-frame').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    selected = frames[+btn.getAttribute('data-i')] || null;
+                    var scrollTop = body.scrollTop;
+                    showFrames();
+                    body.scrollTop = scrollTop;
+                });
+            });
+        }
+
+        function showQty() {
+            step = 2;
+            title.textContent = 'Chọn số lượng ảnh in';
+            back.href = '#';
+            setNextEnabled(true);
+            body.innerHTML =
+                '<section class="phone-qty">' +
+                '<h2>SỐ ẢNH IN</h2>' +
+                '<p>Tấm đầu 50.000đ, mỗi tấm sau thêm 20.000đ</p>' +
+                '<div class="stepper">' +
+                '<button type="button" id="qtyMinus" aria-label="Giảm">−</button>' +
+                '<output id="qty">' + qty + '</output>' +
+                '<button type="button" id="qtyPlus" aria-label="Tăng">+</button>' +
+                '</div>' +
+                '<p class="phone-price" id="price">' + money(total()) + '</p>' +
+                '</section>';
+            document.getElementById('qtyMinus').addEventListener('click', function () {
+                if (qty > MIN_QTY) { qty--; showQty(); }
+            });
+            document.getElementById('qtyPlus').addEventListener('click', function () {
+                if (qty < MAX_QTY) { qty++; showQty(); }
+            });
+            document.getElementById('qtyMinus').disabled = qty <= MIN_QTY;
+            document.getElementById('qtyPlus').disabled = qty >= MAX_QTY;
+        }
+
+        back.addEventListener('click', function (ev) {
+            if (step !== 2) return;
+            ev.preventDefault();
+            showFrames();
+        });
+
+        function saveSelection() {
+            try {
+                sessionStorage.setItem('hoaloPhoneSend', '1');
+                localStorage.setItem('frameSize', selected.size === 'small' ? 'small' : 'full');
+                localStorage.setItem('frameDesign', String(selected.design || '1'));
+                localStorage.setItem('frameFile', selected.frameRel);
+                localStorage.setItem('frameShots', String(selected.shots || 1));
+                localStorage.setItem('printQty', String(qty));
+                localStorage.setItem('orderTotal', String(total()));
+            } catch (e) {}
+        }
+
+        function goFreePrint() {
+            if (!selected || !window.hoaloTakeFreePrints) return false;
+            saveSelection();
+            var n = window.hoaloTakeFreePrints(MAX_QTY);
+            if (n < 1) return false;
+            qty = n;
+            saveSelection();
+            location.href = 'gui-anh-qr.html';
+            return true;
+        }
+
+        btnNext.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            if (btnNext.classList.contains('disabled')) return;
+            if (step === 1) {
+                if (!selected) return;
+                showQty();
+                return;
+            }
+            if (!selected) return;
+            if (goFreePrint()) return;
+            saveSelection();
+            location.href = 'thanh-toan.html';
+        });
+
+        window.addEventListener('hoalo-free', function () {
+            if (step === 2) goFreePrint();
+        });
+
+        function addFrames(list, size, label) {
+            (list || []).forEach(function (item) {
+                if (!item || !item.frameRel) return;
+                var rel = String(item.frameRel).replace(/\\/g, '/');
+                if (!/^(Templates|tmp2)\/frame_\d+\.png$/.test(rel)) return;
+                var copy = {
+                    size: size,
+                    sizeLabel: label,
+                    frameRel: rel,
+                    thumbUrl: item.thumbUrl || item.previewUrl || '',
+                    previewUrl: item.previewUrl || item.thumbUrl || '',
+                    shots: item.shots || 1,
+                    design: String(item.id || '').split('_').pop() || ''
+                };
+                frames.push(copy);
+            });
+        }
+
+        var listed = window.hoaloListSizeFrames
+            ? Promise.all([
+                window.hoaloListSizeFrames('small'),
+                window.hoaloListSizeFrames('full')
+            ])
+            : Promise.resolve([[], []]);
+        listed.then(function (both) {
+            addFrames(both[0], 'small', 'Khung nhỏ');
+            addFrames(both[1], 'full', 'Khung lớn');
+            frames.sort(function (a, b) {
+                if (a.size !== b.size) return a.size === 'small' ? -1 : 1;
+                return (parseInt(a.design, 10) || 0) - (parseInt(b.design, 10) || 0);
+            });
+            showFrames();
+        }).catch(function () {
+            showFrames();
+        });
+    })();
+</script>
+</body>
+</html>

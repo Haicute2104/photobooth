@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Mã gửi ảnh in - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=sf-all-1" rel="stylesheet" />
+    <link href="css/gui-anh.css?v=8" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame phone-qr">
+    <img class="phone-logo" src="images/ChonKhungThietKe/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+    <h1>Quét mã để gửi ảnh</h1>
+    <p class="phone-qr-who" id="who">Đang tạo mã...</p>
+    <div class="phone-qr-box" id="qr"></div>
+    <p class="phone-qr-count" id="count"></p>
+    <a class="phone-back phone-qr-back" id="backToFrames" href="gui-anh.html" aria-label="Quay lại chọn khung" hidden><img src="images/Icons/back.png" alt="Quay lại" /></a>
+    <p class="phone-qr-note">Mã dùng được 30 phút. Mã QR hiện trên màn hình 5 phút.</p>
+</main>
+<div class="modal fade back-confirm" id="backConfirm" tabindex="-1" aria-labelledby="backConfirmTitle" aria-describedby="backConfirmText" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <h2 class="back-confirm-title" id="backConfirmTitle">Quay lại chọn khung?<span class="back-confirm-en">Back to frame selection?</span></h2>
+            <p class="back-confirm-text" id="backConfirmText">Bạn có muốn rời màn hình mã QR để chọn lại khung gửi ảnh?<span class="back-confirm-en">Would you like to leave this QR screen and choose a frame again?</span></p>
+            <div class="back-confirm-actions">
+                <button type="button" class="back-confirm-btn back-confirm-stay" data-bs-dismiss="modal">Ở lại<span class="back-confirm-en">Stay</span></button>
+                <button type="button" class="back-confirm-btn back-confirm-leave" id="confirmBack">Quay lại<span class="back-confirm-en">Go back</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="bootstrap-5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="js/booth-cloud.js?v=20261105-free-qty"></script>
+<script src="js/qrcode.min.js"></script>
+<script>
+    (function () {
+        var QR_MS = 5 * 60 * 1000;
+        var who = document.getElementById('who');
+        var qr = document.getElementById('qr');
+        var count = document.getElementById('count');
+        var backToFrames = document.getElementById('backToFrames');
+        var backConfirm = new bootstrap.Modal(document.getElementById('backConfirm'));
+        var ticket = null;
+        var timer = 0;
+
+        backToFrames.addEventListener('click', function (event) {
+            event.preventDefault();
+            backConfirm.show();
+        });
+        document.getElementById('confirmBack').addEventListener('click', function () {
+            clearInterval(timer);
+            // A new frame selection must create its own QR, not restore this ticket.
+            try { sessionStorage.removeItem('hoaloPhoneTicket'); } catch (e) {}
+            location.href = backToFrames.href;
+        });
+
+        try {
+            if (window.hoaloSettlePayments) window.hoaloSettlePayments();
+        } catch (eSettle) {}
+        try { sessionStorage.removeItem('payMethod'); } catch (ePay) {}
+
+        function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+        function goHome() {
+            try { sessionStorage.removeItem('hoaloPhoneSend'); } catch (e) {}
+            if (window.hoaloGoHome) window.hoaloGoHome();
+            else location.replace('index.html');
+        }
+
+        function paint() {
+            if (!ticket || !ticket.url) {
+                who.textContent = 'Chưa tạo được mã. Hãy chạy web điện thoại.';
+                return;
+            }
+            who.hidden = true;
+            qr.innerHTML = '';
+            if (window.QRCode) {
+                new QRCode(qr, {
+                    text: ticket.url,
+                    width: 260,
+                    height: 260,
+                    colorDark: '#000',
+                    colorLight: '#fff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+            }
+            tick();
+            clearInterval(timer);
+            timer = setInterval(tick, 1000);
+        }
+
+        function tick() {
+            var left = Math.ceil(((ticket && ticket.qrUntil) - Date.now()) / 1000);
+            backToFrames.hidden = left > 120;
+            if (left <= 0) {
+                clearInterval(timer);
+                qr.innerHTML = '';
+                count.textContent = 'Mã trên màn hình đã tắt.';
+                setTimeout(goHome, 8000);
+                return;
+            }
+            count.textContent = 'Mã QR còn ' + pad(Math.floor(left / 60)) + ':' + pad(left % 60);
+        }
+
+        function remember(data) {
+            var now = Date.now();
+            ticket = {
+                url: data.url,
+                token: data.token,
+                deviceId: data.deviceId,
+                amount: data.amount,
+                qty: data.qty,
+                exp: data.exp,
+                qrUntil: now + QR_MS
+            };
+            try { sessionStorage.setItem('hoaloPhoneTicket', JSON.stringify(ticket)); } catch (e) {}
+            paint();
+        }
+
+        try {
+            var saved = sessionStorage.getItem('hoaloPhoneTicket');
+            if (saved) {
+                var old = JSON.parse(saved);
+                if (old && old.url && old.exp && old.exp * 1000 > Date.now() && old.qrUntil > Date.now()) {
+                    ticket = old;
+                    paint();
+                    return;
+                }
+            }
+        } catch (eOld) {}
+
+        var frame = '';
+        var qty = 1;
+        try {
+            frame = localStorage.getItem('frameFile') || '';
+            qty = parseInt(localStorage.getItem('printQty'), 10) || 1;
+        } catch (eRead) {}
+        if (qty < 1) qty = 1;
+        if (qty > 10) qty = 10;
+        if (!frame) {
+            who.textContent = 'Chưa chọn khung ảnh.';
+            return;
+        }
+        fetch('/api/v1/phone-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ frame: frame, qty: qty })
+        }).then(function (r) {
+            return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+        }).then(function (res) {
+            if (!res.ok || !res.body || !res.body.url) {
+                var msg = res.body && res.body.message;
+                who.textContent = (!msg || msg === 'phone-web-off')
+                    ? 'Chưa tạo được mã. Hãy chạy web điện thoại.'
+                    : ('Chưa tạo được mã. ' + msg);
+                return;
+            }
+            remember(res.body);
+        }).catch(function () {
+            who.textContent = 'Chưa tạo được mã. Hãy chạy web điện thoại.';
+        });
+    })();
+</script>
+</body>
+</html>

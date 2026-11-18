@@ -1,0 +1,11 @@
+/* Apply the local font consistently, including components with their own font rules. */
+html body, html body * {
+    font-family: 'SF Pro Display', Arial, sans-serif !important;
+}
+
+/* Back icons scale with the 1080px kiosk canvas instead of their native image size. */
+:is(.picker-back, .design-back, .capture-back, .photo-back, .phone-back, .payment-back, .detail-back) img {
+    display: block;
+    width: 7cqw;
+    height: auto;
+}

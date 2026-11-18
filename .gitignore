@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.next/
+.nuxt/
+.output/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Public - không đẩy lên Git
+public/
+**/public/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+# Local kiosk settings and runtime data
+/config.json
+/data/hoalo-payments.json
+/data/cloud-config.json
+/data/cloud-manifest.json
+/data/cloud-cache/
+/data/_cloud-test/
+__pycache__/
+*.pyc

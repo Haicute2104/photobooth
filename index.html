@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Giữ Trọn Lòng Son - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=index-video-1" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame index-screen">
+    <video class="index-heart-video" src="images/index/ani%20ptb.mp4.mp4" autoplay muted loop playsinline preload="auto" aria-hidden="true"></video>
+
+    <a href="chon-thiet-ke.html" class="screen-start" id="btnStart" aria-label="Chạm để bắt đầu chụp" style="pointer-events:none;opacity:.45">
+        <img class="s1-logo" src="images/logo-hoa-lo.png" alt="Hỏa Lò Prison - Di tích nhà tù Hỏa Lò" />
+        <span class="s1-exhibition">TRƯNG BÀY | EXHIBITION</span>
+        <img class="s1-title" src="images/giu-tron-long-son.png" alt="Giữ Trọn Lòng Son" />
+        <img class="s1-prompt" src="images/ChamDeChupAnh/chạm để bắt đầu.png" alt="Chạm để bắt đầu" />
+        <img class="s1-translation" src="images/ChamDeChupAnh/( TAP TO START ).png" alt="Tap to start" />
+        <img class="s1-camera" src="images/ChamDeChupAnh/Camera - Iconly Pro.png" alt="" />
+    </a>
+</main>
+
+<script src="bootstrap-5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="js/booth-cloud.js?v=20261105-frames"></script>
+<script>
+(function () {
+    var btn = document.getElementById('btnStart');
+    function unlock() {
+        if (!btn) return;
+        btn.style.pointerEvents = '';
+        btn.style.opacity = '';
+    }
+    if (window.hoaloWhenAssetsReady) {
+        window.hoaloWhenAssetsReady().then(unlock).catch(unlock);
+    } else {
+        unlock();
+    }
+})();
+</script>
+</body>
+</html>

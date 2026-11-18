@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Gắn ảnh vào layout - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=sf-all-1" rel="stylesheet" />
+    <link href="css/gan-anh.css?v=2" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame s2 photo-picker">
+
+    <a class="photo-back" href="chup-hinh.html" aria-label="Quay lại"><img src="images/Icons/back.png" alt="Quay lại" /></a>
+    <img class="photo-logo" src="images/ChonKhungThietKe/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+    <h1 class="photo-heading">CHỌN ẢNH</h1>
+    <p class="photo-subtitle">CHẠM VÀO ẢNH ĐỂ GẮN VÀO KHUNG</p>
+
+    <!-- Layout khung in -->
+    <div class="s5-paper">
+        <div class="paper" id="layoutPaper">
+            <div class="paper-slots" id="layoutSlots"></div>
+            <div class="paper-logo"><img src="images/logo-hoa-lo.png" alt="Hỏa Lò Prison" /></div>
+        </div>
+    </div>
+
+    <!-- Ảnh đã chụp -->
+    <div class="s5-strip" id="strip"></div>
+
+    <a href="thanh-toan.html" class="s2-next s4-next s5-next disabled" id="btnNext" aria-disabled="true">
+        <img src="images/ChonKhung/Continue.png" alt="Tiếp theo" />
+    </a>
+</main>
+
+<script src="bootstrap-5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="js/booth-cloud.js?v=20261105-free-qty"></script>
+<script>
+    (function () {
+        // Đọc meta đã lưu ĐỒNG BỘ (localStorage/sessionStorage) để dựng đúng
+        // vị trí lỗ ảnh ngay từ lần vẽ đầu tiên, không chờ fetch mạng.
+        function readSyncMeta() {
+            try {
+                var fr = '';
+                var dg = '';
+                try {
+                    fr = String(localStorage.getItem('frameFile') || '').trim();
+                    dg = String(localStorage.getItem('frameDesign') || '').trim();
+                } catch (e0) {}
+                var src = fr || dg;
+                var m = /(Templates|tmp2)\/frame_(\d+)/i.exec(src);
+                if (!m) return null;
+                var jsonRel = m[1] + '/frame_' + parseInt(m[2], 10) + '-thumb.json';
+                for (var k = 0; k < localStorage.length; k++) {
+                    var key = localStorage.key(k);
+                    if (key && key.indexOf('hoaloFrameJson:') === 0 &&
+                        key.slice(-(jsonRel.length + 1)) === ':' + jsonRel) {
+                        try {
+                            var meta = JSON.parse(localStorage.getItem(key));
+                            if (meta && meta.cameraRects && meta.cameraRects.length) {
+                                if (!meta.frameW || !meta.frameH) {
+                                    if (/^tmp2\//i.test(jsonRel)) { meta.frameW = 1200; meta.frameH = 1800; }
+                                    else { meta.frameW = 1800; meta.frameH = 2400; }
+                                }
+                                return meta;
+                            }
+                        } catch (e1) {}
+                    }
+                }
+                try {
+                    var s = sessionStorage.getItem('hoaloFrameMetaJson:' + jsonRel);
+                    if (s) {
+                        var m2 = JSON.parse(s);
+                        if (m2 && m2.cameraRects && m2.cameraRects.length) {
+                            if (!m2.frameW || !m2.frameH) {
+                                if (/^tmp2\//i.test(jsonRel)) { m2.frameW = 1200; m2.frameH = 1800; }
+                                else { m2.frameW = 1800; m2.frameH = 2400; }
+                            }
+                            return m2;
+                        }
+                    }
+                } catch (e2) {}
+            } catch (e) {}
+            return null;
+        }
+        var syncMeta = readSyncMeta();
+        var SLOT_COUNT = (syncMeta && syncMeta.cameraRects && syncMeta.cameraRects.length)
+            || (window.hoaloGetSelectedShots ? window.hoaloGetSelectedShots() : null)
+            || parseInt(localStorage.getItem('frameShots'), 10) || 8;   // số ô trong layout
+
+        if (window.hoaloGetSelectedFrameMeta) {
+            window._hoaloPendingMeta = window.hoaloGetSelectedFrameMeta();
+        }
+
+        // Đặt ô gắn ảnh khớp đúng lỗ trên khung.
+        // Overlay phủ kín .paper (inset 0) nên dùng % theo đúng tỉ lệ khung là khớp.
+        // Khung full (Templates) hệ 1800x2400, khung small (tmp2) hệ 1200x1800.
+        function frameDimsOf(meta) {
+            var w = meta && +meta.frameW, h = meta && +meta.frameH;
+            if (w > 0 && h > 0) return { w: w, h: h };
+            try {
+                var src = String(localStorage.getItem('frameFile') || localStorage.getItem('frameDesign') || '');
+                if (/(^|\/)tmp2\//i.test(src)) return { w: 1200, h: 1800 };
+            } catch (e) {}
+            return { w: 1800, h: 2400 };
+        }
+        var slotsEl = document.getElementById('layoutSlots');
+        var stripEl = document.getElementById('strip');
+        var btnNext = document.getElementById('btnNext');
+
+        // Ảnh chụp từ màn trước; nếu chưa có thì để trống (không dùng ảnh demo)
+        var photos = [];
+        try { photos = (JSON.parse(sessionStorage.getItem('photos')) || []).filter(Boolean); } catch (e) {}
+
+        // layout[i] = chỉ số ảnh trong photos, hoặc null
+        // fits[i] = vị trí ảnh trong ô: scale 1 là phủ kín, sx/sy là độ lệch theo bề rộng/cao ô
+        var layout = new Array(SLOT_COUNT).fill(null);
+        var fits = [];
+        for (var f = 0; f < SLOT_COUNT; f++) fits.push({ sx: 0, sy: 0, scale: 1 });
+        var active = 0;
+        var slots = [];
+        var photosInSlot = [];
+        var ptrs = {};
+        var gesture = null;
+        var ignoreClick = false;
+        var idleTimer = window.hoaloArmLayoutTimeout ? window.hoaloArmLayoutTimeout() : null;
+
+        function noteActivity() { if (idleTimer) idleTimer.restart(); }
+        ['pointerdown', 'pointerup', 'click', 'keydown'].forEach(function (name) {
+            document.addEventListener(name, noteActivity, true);
+        });
+        document.addEventListener('pointermove', function (e) {
+            if (e.buttons) noteActivity();
+        }, true);
+
+        function placeCoverPhoto(img, slot, fit) {
+            var nW = img.naturalWidth, nH = img.naturalHeight;
+            var r = slot.getBoundingClientRect();
+            if (!nW || !nH || r.width < 2 || r.height < 2) return;
+            var scale = +fit.scale || 1;
+            if (scale < 1) scale = 1;
+            if (scale > 4) scale = 4;
+            var base = Math.max(r.width / nW, r.height / nH);
+            var dw = nW * base * scale;
+            var dh = nH * base * scale;
+            var maxSx = ((dw - r.width) / 2) / r.width;
+            var maxSy = ((dh - r.height) / 2) / r.height;
+            var sx = +fit.sx || 0, sy = +fit.sy || 0;
+            if (sx > maxSx) sx = maxSx;
+            if (sx < -maxSx) sx = -maxSx;
+            if (sy > maxSy) sy = maxSy;
+            if (sy < -maxSy) sy = -maxSy;
+            fit.scale = scale;
+            fit.sx = sx;
+            fit.sy = sy;
+            img.style.width = dw + 'px';
+            img.style.height = dh + 'px';
+            img.style.left = ((r.width - dw) / 2 + sx * r.width) + 'px';
+            img.style.top = ((r.height - dh) / 2 + sy * r.height) + 'px';
+        }
+
+        function resetFit(i) { fits[i] = { sx: 0, sy: 0, scale: 1 }; }
+
+        function makeSlot(j) {
+            var s = document.createElement('button');
+            s.type = 'button';
+            s.className = 'layout-slot';
+            s.dataset.index = j;
+            s.innerHTML =
+                '<span class="slot-clip"><img class="slot-photo" alt="" draggable="false" /></span>' +
+                '<span class="slot-label">Chọn ảnh</span>' +
+                '<span class="slot-remove" role="button" aria-label="Bỏ ảnh">×</span>';
+            s.addEventListener('click', onSlotClick);
+            s.addEventListener('pointerdown', onPointerDown);
+            s.addEventListener('pointermove', onPointerMove);
+            s.addEventListener('pointerup', onPointerEnd);
+            s.addEventListener('pointercancel', onPointerEnd);
+            slots.push(s);
+            photosInSlot.push(s.querySelector('.slot-photo'));
+            return s;
+        }
+
+        function rebuildSlots(n) {
+            layout = new Array(n).fill(null);
+            fits = [];
+            for (var k = 0; k < n; k++) fits.push({ sx: 0, sy: 0, scale: 1 });
+            active = 0;
+            slots.length = 0;
+            photosInSlot.length = 0;
+            slotsEl.innerHTML = '';
+            for (var j = 0; j < n; j++) slotsEl.appendChild(makeSlot(j));
+        }
+
+        function applyCameraRects(meta) {
+            var rects = (meta && meta.cameraRects) || [];
+            if (!rects.length) return;
+            if (rects.length !== slots.length) rebuildSlots(rects.length);
+            // Phủ kín .paper để cùng hệ tọa độ với overlay (vốn inset: 0 của .paper).
+            slotsEl.style.position = 'absolute';
+            slotsEl.style.inset = '0';
+            slotsEl.style.display = 'block';
+            rects.forEach(function (rect, i) {
+                var s = slots[i];
+                if (!s) return;
+                var dims = frameDimsOf(meta);
+                s.style.position = 'absolute';
+                s.style.left = (rect.x / dims.w * 100) + '%';
+                s.style.top = (rect.y / dims.h * 100) + '%';
+                s.style.width = (rect.w / dims.w * 100) + '%';
+                s.style.height = (rect.h / dims.h * 100) + '%';
+                s.style.aspectRatio = 'auto';
+            });
+            render();
+        }
+
+        for (var i = 0; i < SLOT_COUNT; i++) slotsEl.appendChild(makeSlot(i));
+
+        if (!photos.length) {
+            stripEl.innerHTML = '<p class="strip-empty">Chưa có ảnh chụp. Vui lòng quay lại màn chụp hình.</p>';
+        }
+        photos.forEach(function (src, i) {
+            var p = document.createElement('button');
+            p.type = 'button';
+            p.className = 'strip-photo';
+            p.style.backgroundImage = 'url(' + src + ')';
+            p.setAttribute('aria-label', 'Ảnh ' + (i + 1));
+            p.addEventListener('click', function () {
+                if (active === -1) return;
+                layout[active] = i;
+                resetFit(active);
+                active = nextEmpty(active);
+                render();
+            });
+            stripEl.appendChild(p);
+        });
+
+        function onSlotClick(e) {
+            if (ignoreClick) { ignoreClick = false; return; }
+            var idx = +this.dataset.index;
+            if (e.target.closest('.slot-remove')) {
+                layout[idx] = null;
+                resetFit(idx);
+            }
+            active = idx;
+            render();
+        }
+
+        function ptrList() {
+            var a = [];
+            for (var id in ptrs) a.push(ptrs[id]);
+            return a;
+        }
+
+        function hypot(a, b) {
+            var dx = a.x - b.x, dy = a.y - b.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function onPointerDown(e) {
+            if (e.target.closest('.slot-remove')) return;
+            var idx = +this.dataset.index;
+            active = idx;
+            if (layout[idx] === null) { render(); return; }
+            try { this.setPointerCapture(e.pointerId); } catch (err) {}
+            ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+            var pts = ptrList();
+            var fit = fits[idx];
+            if (pts.length >= 2) {
+                gesture = {
+                    type: 'pinch', idx: idx, moved: false,
+                    dist: hypot(pts[0], pts[1]) || 1,
+                    scale: fit.scale, sx: fit.sx, sy: fit.sy,
+                    mx: (pts[0].x + pts[1].x) / 2, my: (pts[0].y + pts[1].y) / 2
+                };
+            } else {
+                gesture = { type: 'pan', idx: idx, moved: false, x: e.clientX, y: e.clientY, sx: fit.sx, sy: fit.sy };
+            }
+            render();
+        }
+
+        var rafPending = false;
+        var rafSlot = null;
+        var rafIdx = -1;
+
+        function flushMove() {
+            rafPending = false;
+            try {
+                var img = photosInSlot[rafIdx];
+                if (img && rafSlot && img.naturalWidth) placeCoverPhoto(img, rafSlot, fits[rafIdx]);
+            } catch (e) {}
+        }
+
+        function onPointerMove(e) {
+            try {
+                if (!ptrs[e.pointerId] || !gesture || gesture.idx !== +this.dataset.index) return;
+                ptrs[e.pointerId].x = e.clientX;
+                ptrs[e.pointerId].y = e.clientY;
+                var fit = fits[gesture.idx];
+                var rect = this.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+                if (gesture.type === 'pan') {
+                    var dx = e.clientX - gesture.x, dy = e.clientY - gesture.y;
+                    if (dx * dx + dy * dy > 16) gesture.moved = true;
+                    fit.sx = gesture.sx + dx / rect.width;
+                    fit.sy = gesture.sy + dy / rect.height;
+                } else {
+                    var pts = ptrList();
+                    if (pts.length < 2) return;
+                    var d = hypot(pts[0], pts[1]);
+                    var mx = (pts[0].x + pts[1].x) / 2, my = (pts[0].y + pts[1].y) / 2;
+                    gesture.moved = true;
+                    fit.scale = gesture.scale * (d / gesture.dist);
+                    fit.sx = gesture.sx + (mx - gesture.mx) / rect.width;
+                    fit.sy = gesture.sy + (my - gesture.my) / rect.height;
+                }
+                rafSlot = this;
+                rafIdx = gesture.idx;
+                if (rafPending) return;
+                rafPending = true;
+                requestAnimationFrame(flushMove);
+            } catch (err) {}
+        }
+
+        function onPointerEnd(e) {
+            var moved = gesture && gesture.moved && gesture.idx === +this.dataset.index;
+            delete ptrs[e.pointerId];
+            var left = ptrList();
+            if (!left.length) gesture = null;
+            else if (layout[+this.dataset.index] !== null) {
+                var fit = fits[+this.dataset.index];
+                gesture = { type: 'pan', idx: +this.dataset.index, moved: true, x: left[0].x, y: left[0].y, sx: fit.sx, sy: fit.sy };
+            }
+            if (moved) {
+                ignoreClick = true;
+                saveFits();
+                setTimeout(function () { ignoreClick = false; }, 400);
+            }
+        }
+
+        // Ô trống kế tiếp (tìm vòng từ vị trí hiện tại), -1 nếu đã đầy
+        function nextEmpty(from) {
+            for (var k = 1; k <= SLOT_COUNT; k++) {
+                var j = (from + k) % SLOT_COUNT;
+                if (layout[j] === null) return j;
+            }
+            return -1;
+        }
+
+        function saveFits() {
+            try { sessionStorage.setItem('layoutFit', JSON.stringify(fits)); } catch (e) {}
+        }
+
+        function render() {
+            slots.forEach(function (s, i) {
+                var filled = layout[i] !== null;
+                s.classList.toggle('filled', filled);
+                s.classList.toggle('active', i === active);
+                var img = photosInSlot[i];
+                if (!filled) {
+                    img.hidden = true;
+                    img.removeAttribute('src');
+                    delete img.dataset.photo;
+                    return;
+                }
+                var url = photos[layout[i]];
+                img.hidden = false;
+                if (img.dataset.photo !== String(layout[i])) {
+                    img.dataset.photo = String(layout[i]);
+                    img.onload = function () {
+                        placeCoverPhoto(img, s, fits[i]);
+                        requestAnimationFrame(function () { placeCoverPhoto(img, s, fits[i]); });
+                    };
+                    img.src = url;
+                } else if (img.naturalWidth) {
+                    placeCoverPhoto(img, s, fits[i]);
+                }
+            });
+
+            var full = layout.every(function (v) { return v !== null; });
+            btnNext.classList.toggle('disabled', !full);
+            btnNext.setAttribute('aria-disabled', String(!full));
+            try { sessionStorage.setItem('layout', JSON.stringify(layout)); } catch (e) {}
+            saveFits();
+        }
+
+        document.getElementById('btnNext').addEventListener('click', function (ev) {
+            if (!layout.every(function (index) { return Number.isInteger(index) && !!photos[index]; })) {
+                ev.preventDefault();
+                return;
+            }
+            if (!window.hoaloTakeFreePrints) return;
+            var n = window.hoaloTakeFreePrints(10);
+            if (n < 1) return;
+            ev.preventDefault();
+            try { localStorage.setItem('printQty', String(n)); } catch (eFree) {}
+            location.href = 'hoan-thanh.html';
+        });
+
+        window.addEventListener('resize', function () { render(); });
+        // Dựng đúng vị trí lỗ ảnh ngay từ lần vẽ đầu (đồng bộ),
+        // fetch async bên trên chỉ còn tác dụng refresh khi meta đổi.
+        if (syncMeta) applyCameraRects(syncMeta);
+        render();
+        if (window._hoaloPendingMeta && window._hoaloPendingMeta.then) {
+            window._hoaloPendingMeta.then(function (meta) {
+                if (meta) applyCameraRects(meta);
+            }).catch(function () {});
+            try { delete window._hoaloPendingMeta; } catch (e) {}
+        }
+        if (window.hoaloApplyFrameOverlay) {
+            window.hoaloApplyFrameOverlay(document.getElementById('layoutPaper'));
+        }
+    })();
+</script>
+</body>
+</html>

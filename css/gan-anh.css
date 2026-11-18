@@ -1,0 +1,10 @@
+.mobile-frame.photo-picker { background: #fff url('../images/ChonKhungThietKe/bg.png') center / 100% 100% no-repeat; font-family: Arial,sans-serif; }
+.photo-back { position: absolute; z-index: 2; left: 6.5%; top: 3%; color: #ce3029; font: 400 10cqw/1 Arial,sans-serif; text-decoration: none; }
+.photo-logo { position: absolute; top: 4.1%; left: 50%; width: 15%; height: auto; transform: translateX(-50%); }
+.photo-heading { position: absolute; top: 12.5%; width: 100%; margin: 0; color: #e3414e; font: 800 6.4cqw/1.1 Arial,sans-serif; text-align: center; }
+.photo-subtitle { position: absolute; top: 16.8%; width: 100%; margin: 0; color: #343d90; font: 600 2.8cqw/1 Arial,sans-serif; text-align: center; }
+.photo-picker .s5-paper { top: 20%; width: 62%; }
+.photo-picker .s5-strip { top: 70.5%; gap: 2.2cqw; padding: 2cqw 4cqw; background: rgba(255,255,255,.2); }
+.photo-picker .strip-photo { flex-basis: 18.5cqw; height: 22cqw; aspect-ratio: auto; border-radius: .8cqw; }
+.photo-picker .strip-empty { color: #333; }
+.photo-picker .s5-next { left: 50%; right: auto; top: 86%; bottom: auto; width: 57%; transform: translateX(-50%); }

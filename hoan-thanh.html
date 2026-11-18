@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Nhận bản in - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=20261115-print-feed" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+    <link href="css/payment-finish.css?v=20261115-print-timing" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame s2 finish-screen">
+    <img class="finish-logo" src="images/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+    <p class="finish-exhibition">TRƯNG BÀY | EXHIBITION</p>
+    <img class="finish-title" src="images/giu-tron-long-son.png" alt="Giữ Trọn Lòng Son" />
+    <!-- <p id="printPreparing" class="finish-preparing" role="status">Thời gian chỉnh sửa ảnh trước khi in có thể lâu hơn dự kiến, vui lòng chờ thêm.</p> -->
+
+    <!-- Tờ in trồi ra từ khe máy in -->
+    <div class="s8-print">
+
+        <div class="s8-window">
+            <div class="paper">
+                <div class="paper-slots" id="printSlots"></div>
+                <div class="paper-footer">
+                    <img class="footer-logo" src="images/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+                    <!-- Hiệu ứng in: không hiện QR (QR CDN stamp trên ảnh thật sau khi upload xong) -->
+                    <div class="audio-qr s8-qr-hidden" aria-hidden="true">
+                        <div class="audio-qr-code" id="audioQr"></div>
+                        <p class="audio-qr-date" id="audioQrDate"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="s8-slot"></div>
+    </div>
+
+    <div class="s8-collect">
+        <strong>Vui lòng nhận bản in tại khay máy phía dưới.</strong>
+        
+        <div class="s8-arrow" aria-hidden="true">
+            <svg viewBox="0 0 12 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 1v12M1.5 8.5 6 13l4.5-4.5" />
+            </svg>
+        </div>
+        <p class="finish-warning">Chú ý: “ĐỪNG RÚT ẢNH VỘI!”</p>
+        <p class="finish-note">Máy sẽ in ảnh qua nhiều lượt để hoàn thiện từng lớp màu. Trong quá trình này, ảnh có thể được đưa ra ngoài rồi tự động trở lại máy để tiếp tục in.<br>Vui lòng không chạm hoặc lấy ảnh cho đến khi quá trình in hoàn tất.</p>
+        <div id="printReturnControls" class="finish-return" hidden>
+            <button type="button" id="printReturnConfirm" class="finish-return-confirm">Xác nhận về màn chờ</button>
+        </div>
+    </div>
+</main>
+
+<div id="printFailPopup" class="print-fail-popup" hidden>
+    <div class="print-fail-card">
+        <h2>MÁY IN GẶP SỰ CỐ</h2>
+        <p class="print-fail-msg">Không in được bản giấy.<br>Quét mã QR để tải ảnh từ CDN (giữ 7 ngày).</p>
+        <div class="print-fail-qr" id="printFailQr"></div>
+        <p class="print-fail-date" id="printFailDate"></p>
+        <button type="button" class="print-fail-btn" id="printFailOk">Về màn chờ</button>
+    </div>
+</div>
+
+<div id="composeFailPopup" class="print-fail-popup" role="alert" hidden>
+    <div class="print-fail-card">
+        <h2>VUI LÒNG CHỜ THÊM</h2>
+        <p class="print-fail-msg">Thời gian chỉnh sửa ảnh trước khi in có thể lâu hơn dự kiến, vui lòng chờ thêm.</p>
+        <p class="print-fail-msg" id="composeFailMessage"></p>
+        <a id="composeChooseAgain" class="print-fail-btn" href="gan-anh.html">Chọn lại ảnh</a>
+        <button id="composeRetry" type="button" class="print-fail-btn" onclick="location.reload()">Thử lại</button>
+        <button id="printCheckAgain" type="button" class="print-fail-btn" hidden>Kiểm tra lại lệnh in</button>
+    </div>
+</div>
+
+<script src="js/booth-cloud.js?v=20261115-print-wait"></script>
+<script src="js/qrcode.min.js"></script>
+<script src="js/print-sheet.js"></script>
+<script>
+    (function () {
+        try {
+            if (sessionStorage.getItem('hoaloPhoneSend') === '1') {
+                location.replace('gui-anh-qr.html');
+                return;
+            }
+        } catch (ePhone) {}
+        // Vào màn hiệu ứng in thì quỹ tiền về 0. Không đổi giao diện.
+        var resetPay = window.hoaloSettlePayments
+            ? window.hoaloSettlePayments()
+            : fetch('/api/v1/payments/settle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+                cache: 'no-store'
+            }).catch(function () {});
+        if (resetPay && resetPay.catch) resetPay.catch(function () {});
+
+        var qty = 1;
+        try { qty = parseInt(localStorage.getItem('printQty'), 10) || 1; } catch (e) {}
+        if (qty < 1) qty = 1;
+        if (qty > 10) qty = 10;
+        var PRINT_ANIMATION_MS = 120000;
+        var RETURN_BUTTON_DELAY_MS = 60000;
+        var RETURN_IDLE_MS = 180000;
+        var PRINT_STATUS_WAIT_MS = 150000;
+
+        var paper = document.querySelector('.s8-window .paper');
+        var started = false;
+        var finished = false;
+        var homeTimer = null;
+        var returnButtonTimer = null;
+        var returnReady = false;
+        var pollTimer = null;
+        var jobId = '';
+        var returnControls = document.getElementById('printReturnControls');
+        var finishScreen = document.querySelector('.finish-screen');
+
+        function hideReturnConfirmation() {
+            returnControls.hidden = true;
+            if (finishScreen) finishScreen.classList.remove('is-awaiting-confirmation');
+        }
+
+        function showReturnConfirmation() {
+            if (finished || !returnReady) return;
+            if (!document.getElementById('composeFailPopup').hidden || !document.getElementById('printFailPopup').hidden) return;
+            returnControls.hidden = false;
+            if (finishScreen) finishScreen.classList.add('is-awaiting-confirmation');
+        }
+
+        function noteActivity() {
+            if (finished) return;
+            if (homeTimer) clearTimeout(homeTimer);
+            homeTimer = setTimeout(goHome, RETURN_IDLE_MS);
+        }
+
+        function pad(n) { return (n < 10 ? '0' : '') + n; }
+        function today() {
+            var d = new Date();
+            return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear();
+        }
+
+        function goHome() {
+            if (finished) return;
+            finished = true;
+            if (homeTimer) clearTimeout(homeTimer);
+            if (returnButtonTimer) clearTimeout(returnButtonTimer);
+            if (pollTimer) clearInterval(pollTimer);
+            try {
+                ['photos', 'layout', 'layoutFit', 'payMethod', 'transaction', 'hoaloOrderId', 'hoaloQrUrl', 'hoaloPrinted', 'hoaloPaySeen'].forEach(function (k) { sessionStorage.removeItem(k); });
+                ['frameSize', 'frameDesign', 'frameFile', 'printQty', 'orderTotal'].forEach(function (k) { localStorage.removeItem(k); });
+            } catch (e) {}
+            location.replace('index.html');
+        }
+
+        function showDownloadQr(cdnLink) {
+            if (finished) return;
+            document.getElementById('composeFailPopup').hidden = true;
+            hideReturnConfirmation();
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            var popup = document.getElementById('printFailPopup');
+            var box = document.getElementById('printFailQr');
+            var dateEl = document.getElementById('printFailDate');
+            if (!popup || !box || !cdnLink) { goHome(); return; }
+            box.innerHTML = '';
+            if (dateEl) dateEl.textContent = today();
+            try {
+                if (window.QRCode) {
+                    new QRCode(box, {
+                        text: cdnLink,
+                        width: 256,
+                        height: 256,
+                        colorDark: '#000',
+                        colorLight: '#fff',
+                        correctLevel: QRCode.CorrectLevel.M
+                    });
+                }
+            } catch (e) {}
+            popup.hidden = false;
+            var ok = document.getElementById('printFailOk');
+            if (ok) ok.onclick = goHome;
+        }
+
+        function startFeed() {
+            if (started) return;
+            started = true;
+            var preparing = document.getElementById('printPreparing');
+            if (preparing) preparing.hidden = true;
+            if (paper) {
+                paper.style.setProperty('--print-ms', PRINT_ANIMATION_MS + 'ms');
+                paper.classList.add('is-printing');
+            }
+        }
+
+        function showPendingPrint(message) {
+            hideReturnConfirmation();
+            document.getElementById('composeFailMessage').textContent = message + ' Mã lệnh: ' + jobId;
+            document.getElementById('composeChooseAgain').hidden = true;
+            document.getElementById('composeRetry').hidden = true;
+            var check = document.getElementById('printCheckAgain');
+            check.hidden = false;
+            check.onclick = function () {
+                document.getElementById('composeFailPopup').hidden = true;
+                pollJob(jobId);
+            };
+            document.getElementById('composeFailPopup').hidden = false;
+        }
+
+        function pollJob(id) {
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            jobId = id;
+            var deadline = Date.now() + PRINT_STATUS_WAIT_MS;
+            var sawCdn = '';
+            var lastStatus = '';
+            var inflight = false;
+            function tick() {
+                if (finished || inflight) return;
+                inflight = true;
+                fetch('/api/v1/prints?id=' + encodeURIComponent(id), { cache: 'no-store' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (st) {
+                        if (finished) return;
+                        if (!st) {
+                            if (Date.now() >= deadline) showPendingPrint('Không đọc được trạng thái từ máy chủ. Chưa xác nhận được kết quả in.');
+                            return;
+                        }
+                        if (st.ok === false) {
+                            if (Date.now() >= deadline) showPendingPrint('Không tìm thấy hồ sơ lệnh trong hàng đợi in. Cần kiểm tra thư mục mà chương trình in đã di chuyển lệnh tới.');
+                            return;
+                        }
+                        if (st.cdnLink) sawCdn = st.cdnLink;
+                        if ((st.status === 'queued' || st.status === 'printing') && st.status !== lastStatus) {
+                            deadline = Date.now() + PRINT_STATUS_WAIT_MS;
+                            document.getElementById('composeFailPopup').hidden = true;
+                            showReturnConfirmation();
+                        }
+                        lastStatus = st.status;
+                        if (st.status === 'done') {
+                            document.getElementById('composeFailPopup').hidden = true;
+                            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                            showReturnConfirmation();
+                            return;
+                        }
+                        if (st.status === 'failed' && (st.cdnLink || sawCdn)) {
+                            showDownloadQr(st.cdnLink || sawCdn);
+                            return;
+                        }
+                        if (st.status === 'failed') {
+                            showPendingPrint(st.error || 'Xử lý lệnh in thất bại. Vui lòng kiểm tra chương trình in.');
+                            return;
+                        }
+                        if (Date.now() >= deadline) {
+                            showPendingPrint('Ảnh đã lưu nhưng chưa xác nhận được kết quả in. Vui lòng kiểm tra PtbHtmlPrint và thư mục hàng đợi.');
+                        }
+                    })
+                    .catch(function () {
+                        if (Date.now() >= deadline) {
+                            showPendingPrint('Không đọc được trạng thái lệnh in. Vui lòng kiểm tra kết nối với máy chủ.');
+                        }
+                    }).then(function () { inflight = false; });
+            }
+            tick();
+            pollTimer = setInterval(tick, 1500);
+        }
+
+        function saveJob(spec, image, orderId, attempt) {
+            var ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+            // Chỉ gửi ảnh vào cho-cdn — server trả ngay; PtbHtmlPrint.exe upload CDN + stamp QR.
+            var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 12000);
+            return fetch('/api/v1/prints', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    image: image,
+                    orderId: orderId || '',
+                    pageW: spec.pageW,
+                    pageH: spec.pageH,
+                    paperSize: spec.paperSize,
+                    paperWidthInch: spec.paperWidthInch,
+                    paperHeightInch: spec.paperHeightInch,
+                    dpi: spec.dpi,
+                    qty: qty,
+                    frameRel: (window.HOALO_PRINT_MARKS || {}).frameRel,
+                    qrRect: (window.HOALO_PRINT_MARKS || {}).qrRect,
+                    dateRect: (window.HOALO_PRINT_MARKS || {}).dateRect,
+                    dateText: (window.HOALO_PRINT_MARKS || {}).dateText,
+                    layout: JSON.parse(sessionStorage.getItem('layout') || '[]')
+                }),
+                signal: ctrl ? ctrl.signal : undefined
+            }).then(function (r) {
+                clearTimeout(timer);
+                if (!r.ok) throw new Error('save');
+                return r.json();
+            }).then(function (body) {
+                if (body && body.ok === false) throw new Error(body.message || 'save');
+                return body;
+            }).catch(function (err) {
+                clearTimeout(timer);
+                if (attempt < 1) return saveJob(spec, image, orderId, attempt + 1);
+                return Promise.reject(err);
+            });
+        }
+
+        document.getElementById('printReturnConfirm').onclick = goHome;
+        ['pointerdown', 'keydown', 'wheel'].forEach(function (name) {
+            window.addEventListener(name, noteActivity, { passive: true });
+        });
+        noteActivity();
+        returnButtonTimer = setTimeout(function () {
+            returnReady = true;
+            showReturnConfirmation();
+        }, RETURN_BUTTON_DELAY_MS);
+        renderPrintSheet(document.getElementById('printSlots'), null);
+        startFeed();
+
+        var orderWait = window.hoaloEnsureDownloadOrderAsync
+            ? window.hoaloEnsureDownloadOrderAsync()
+            : Promise.resolve({ orderId: '', qrUrl: '' });
+        orderWait.then(function (order) {
+            var specWait = window.hoaloGetPrintSpec ? window.hoaloGetPrintSpec() : Promise.resolve({
+                pageW: 1800, pageH: 2400, paperSize: '6x8', paperWidthInch: 6, paperHeightInch: 8, dpi: 300
+            });
+            return specWait.then(function (spec) {
+                var compose = window.composePrintPng ? window.composePrintPng(spec.pageW, spec.pageH) : Promise.resolve('');
+                return compose.then(function (image) {
+                    if (!image) throw new Error('image');
+                    // Save and monitor the print independently of the screen animation.
+                    return saveJob(spec, image, order && order.orderId, 0).then(function (saved) {
+                        if (saved && saved.id) {
+                            try {
+                                sessionStorage.setItem('hoaloPrinted', JSON.stringify({
+                                    id: saved.id,
+                                    orderId: (saved.orderId || (order && order.orderId) || ''),
+                                    qty: qty
+                                }));
+                            } catch (e) {}
+                            pollJob(saved.id);
+                        } else {
+                            throw new Error('Chưa nhận được mã lệnh in. Vui lòng thử lại.');
+                        }
+                    });
+                });
+            });
+        }).catch(function (err) {
+            hideReturnConfirmation();
+            document.getElementById('composeFailMessage').textContent = err.message || 'Không tạo hoặc gửi được bản in. Vui lòng thử lại.';
+            document.getElementById('composeFailPopup').hidden = false;
+        });
+    })();
+</script>
+</body>
+</html>

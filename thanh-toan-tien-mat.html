@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Thanh toán tiền mặt - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=sf-all-1" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+    <link href="css/payment-finish.css?v=1" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame s2 payment-detail">
+    <a class="detail-back" href="thanh-toan.html" aria-label="Quay lại"><img src="images/Icons/back.png" alt="Quay lại" /></a>
+    <img class="detail-logo" src="images/ChonKhungThietKe/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+    <h1 class="detail-heading">THANH TOÁN TIỀN MẶT</h1>
+
+
+    <section class="s9-card" id="cashCard">
+        <h2 class="s9-title">CHI TIẾT ĐƠN HÀNG</h2>
+        <p class="s9-sub">(ORDER DETAILS)</p>
+        <p class="s9-price" id="price">10.000 VNĐ</p>
+
+        <p class="s9-text">Mời bạn đưa tiền vào khe</p>
+        <p class="s9-text-en">Please insert the money into the slot</p>
+
+        <div class="s9-slot"></div>
+        <div class="s9-money s9-money-text" id="money" aria-hidden="true"><span>₫</span></div>
+
+        <p class="s9-text">Đã nhận</p>
+        <p class="s9-text-en">(Received)</p>
+        <p class="s9-amount"><span id="received">0đ</span><span class="sep">/</span><span id="need">20.000đ</span></p>
+
+        <div class="s9-progress">
+            <div class="s9-spinner" aria-hidden="true">
+                <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" />
+                </svg>
+            </div>
+            <div class="s9-bar" role="progressbar" aria-label="Đã nhận" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <span id="bar"></span>
+            </div>
+        </div>
+
+        <p class="s7-seconds" id="paymentCountdown" role="timer" hidden>Thời gian còn lại: <span id="seconds"></span></p>
+
+        <p class="s9-note">Máy tự động nhận diện và cộng dồn tiền. Không nhận tiền rách, nát.<br>
+            Máy chỉ nhận tiền tệ Việt Nam (Không thối lại tiền thừa)</p>
+        <p class="s9-note-en">The machine automatically recognizes and accumulates the inserted cash. It does not accept torn or damaged banknotes.<br>
+            The machine accepts only Vietnamese currency (no change is given).</p>
+        <div class="s9-warn" aria-hidden="true">
+            <svg viewBox="0 0 24 22"><path fill="currentColor" d="M10.3 1.2a2 2 0 0 1 3.4 0l9.9 17a2 2 0 0 1-1.7 3H2.1a2 2 0 0 1-1.7-3z" /><path fill="#fff" d="M11 7h2v7h-2zM11 16h2v2h-2z" /></svg>
+        </div>
+    </section>
+</main>
+
+<script src="js/booth-cloud.js?v=20261115-shared-timeout"></script>
+<script src="bootstrap-5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="js/print-sheet.js"></script>
+<script src="js/pay-success.js"></script>
+<script>
+    (function () {
+        var total = getOrderTotal();
+        var received = 0;
+
+        var card = document.getElementById('cashCard');
+        var receivedEl = document.getElementById('received');
+        var bar = document.getElementById('bar');
+
+        function vnd(n) { return n.toLocaleString('vi-VN') + 'đ'; }
+
+        document.getElementById('price').textContent = formatVnd(total);
+        document.getElementById('need').textContent = vnd(total);
+
+        function render() {
+            var pct = total > 0 ? Math.min(100, Math.round(received / total * 100)) : 100;
+            receivedEl.textContent = vnd(received);
+            bar.style.width = pct + '%';
+            bar.parentNode.setAttribute('aria-valuenow', pct);
+        }
+
+        var payTimer = window.hoaloArmPaymentTimeout({
+            onTick: function (n) {
+                document.getElementById('seconds').textContent = Math.max(n, 0) + ' giây';
+                document.getElementById('paymentCountdown').hidden = false;
+            }
+        });
+        var lastPaid = 0;
+        var payWatch = null;
+        var leftForPrint = false;
+
+        function arm(amount) {
+            if (leftForPrint) return;
+            total = amount;
+            document.getElementById('price').textContent = formatVnd(total);
+            document.getElementById('need').textContent = vnd(total);
+            if (payWatch) payWatch.cancel();
+            payWatch = window.hoaloWatchPayment(total, {
+                onUpdate: function (n) {
+                    if (n === lastPaid) return;
+                    var grew = n > lastPaid;
+                    lastPaid = n;
+                    received = n;
+                    render();
+                    if (grew && n < total && payTimer) payTimer.restart();
+                },
+                onEnough: function (n) {
+                    leftForPrint = true;
+                    if (payTimer) payTimer.cancel();
+                    received = n;
+                    render();
+                    card.classList.add('paid');
+                    setTimeout(function () {
+                        showPaySuccess({ id: 'pay', amount: n });
+                    }, 800);
+                }
+            });
+        }
+
+        arm(total);
+        if (window.hoaloPrepareOrderTotal) {
+            window.hoaloPrepareOrderTotal().then(function (n) {
+                if (!leftForPrint && n !== total) arm(n);
+            }).catch(function () {});
+        }
+
+        // Gọi hàm này mỗi khi máy nhận tiền báo về một tờ tiền hợp lệ (mệnh giá VNĐ)
+        window.onCashReceived = function (amount) {
+            fetch('/api/v1/payments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: 'cash-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+                    timestamp: new Date().toISOString(),
+                    amount: amount
+                })
+            }).catch(function () {});
+        };
+
+        render();
+    })();
+</script>
+</body>
+</html>

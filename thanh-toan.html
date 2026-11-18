@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Thanh toán - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=sf-all-1" rel="stylesheet" />
+    <link href="css/thanh-toan.css?v=3" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame s2 payment-screen">
+
+    <a class="payment-back" href="#" id="btnBack" aria-label="Quay lại"><img src="images/Icons/back.png" alt="Quay lại" /></a>
+    <img class="payment-logo" src="images/ChonKhungThietKe/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+    <h1 class="payment-heading">CHỌN HÌNH THỨC<br>THANH TOÁN</h1>
+
+    <!-- Tờ in hoàn chỉnh -->
+    <div class="s6-paper">
+        <img id="phoneFramePreview" class="phone-frame-preview" alt="Mẫu khung ảnh đã chọn" hidden />
+        <div class="paper">
+            <div class="paper-slots" id="printSlots"></div>
+            <div class="paper-footer">
+                <img class="footer-logo" src="images/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+                <div class="audio-qr">
+                    <p class="audio-qr-title">Audio câu chuyện</p>
+                    <div class="audio-qr-body">
+                        <div class="audio-qr-wrap">
+                            <div class="audio-qr-code" id="audioQr"></div>
+                            <p class="audio-qr-date" id="audioQrDate"></p>
+                        </div>
+                        <p class="audio-qr-hint">Dùng điện thoại<br>để quét mã QR</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thanh toán -->
+    <section class="s6-pay">
+        <h2 class="s6-pay-title">SỐ TIỀN CẦN THANH TOÁN</h2>
+        <p class="s6-price" id="price">10.000 VNĐ</p>
+        <div class="s6-methods">
+            <!-- Tạm ẩn UI thanh toán QR; bỏ comment để bật lại.
+            <a href="thanh-toan-qr.html" class="pay-method" data-method="qr" hidden>
+                <span>BẤM ĐỂ<br>QUÉT MÃ QR</span>
+                <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M4 20V5h15M45 5h15v15M4 44v15h15M45 59h15V44M11 12h17v17H11zm5 5v7h7v-7zm20-5h17v17H36zm5 5v7h7v-7zM11 37h17v17H11zm5 5v7h7v-7zm20-6h6v6h-6zm10 0h7v5h-7zm-10 11h5v7h-5zm9-2h8v9h-8z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/></svg>
+            </a>
+            -->
+            <a href="thanh-toan-tien-mat.html" class="pay-method" data-method="cash">
+                <span>BẤM ĐỂ TRẢ<br>TIỀN MẶT</span>
+                <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M5 24V12h54v12M13 19h38v40H13zM20 25h24v28H20z" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/><circle cx="32" cy="39" r="7" fill="currentColor"/></svg>
+            </a>
+        </div>
+        <p class="s6-countdown" id="paymentCountdown" role="timer" hidden>Thời gian còn lại: <strong id="seconds"></strong></p>
+    </section>
+</main>
+
+<script src="js/booth-cloud.js?v=20261115-shared-timeout"></script>
+<script src="bootstrap-5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="js/qrcode.min.js"></script>
+<script src="js/print-sheet.js"></script>
+<script>
+    document.getElementById('price').textContent = formatVnd(getOrderTotal());
+    var isPhoneOrder = false;
+    try { isPhoneOrder = sessionStorage.getItem('hoaloPhoneSend') === '1'; } catch (e) {}
+    if (isPhoneOrder) {
+        var preview = document.getElementById('phoneFramePreview');
+        document.querySelector('.s6-paper .paper').hidden = true;
+        var frame = '', size = 'full';
+        try {
+            frame = localStorage.getItem('frameFile') || '';
+            size = localStorage.getItem('frameSize') || 'full';
+        } catch (e) {}
+        if (window.hoaloListSizeFrames) {
+            window.hoaloListSizeFrames(size).then(function (frames) {
+                var selected = frames.find(function (item) { return item.frameRel === frame; });
+                if (selected && (selected.previewUrl || selected.thumbUrl)) {
+                    preview.src = selected.previewUrl || selected.thumbUrl;
+                    preview.hidden = false;
+                }
+            }).catch(function () {});
+        }
+    } else {
+        (window.hoaloEnsureDownloadOrderAsync ? window.hoaloEnsureDownloadOrderAsync() : Promise.resolve({})).then(function () {
+            renderPrintSheet(document.getElementById('printSlots'), document.getElementById('audioQr'));
+        });
+    }
+
+    var qrLink = document.querySelector('.pay-method[data-method="qr"]');
+    // Boot offline timeout: an nut QR, van de tien mat (khong ep redirect).
+    if (window.hoaloIsForceCash && window.hoaloIsForceCash()) {
+        if (qrLink) qrLink.hidden = true;
+    } else {
+        var totalWait = window.hoaloPrepareOrderTotal ? window.hoaloPrepareOrderTotal() : Promise.resolve(getOrderTotal());
+        totalWait.then(function (n) {
+            document.getElementById('price').textContent = formatVnd(n);
+            if (!window.hoaloGetPayQr) return;
+            return window.hoaloGetPayQr(n).then(function (url) {
+                if (url && qrLink) qrLink.hidden = false;
+            });
+        }).catch(function () {});
+    }
+
+    // Ghi lại hình thức thanh toán đã chọn
+    document.querySelectorAll('.pay-method').forEach(function (a) {
+        a.addEventListener('click', function () {
+            try { sessionStorage.setItem('payMethod', a.dataset.method); } catch (e) {}
+        });
+    });
+
+    if (window.hoaloArmPaymentTimeout) {
+        window.hoaloArmPaymentTimeout({
+            onTick: function (n) {
+                document.getElementById('seconds').textContent = Math.max(n, 0) + ' giây';
+                document.getElementById('paymentCountdown').hidden = false;
+            }
+        });
+    }
+
+    // Modal xác nhận thoát về trang chủ
+    var backModalHtml =
+        '<div class="modal fade back-confirm" id="backConfirm" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-hidden="true">' +
+        '  <div class="modal-dialog modal-dialog-centered">' +
+        '    <div class="modal-content">' +
+        '      <div class="modal-body">' +
+        '        <p class="back-confirm-text">Hủy tiến trình hiện tại và quay về trang chủ?<span class="back-confirm-en">(Cancel the current progress and return to the home page?)</span></p>' +
+        '        <div class="back-confirm-actions">' +
+        '          <button type="button" class="back-confirm-btn back-confirm-stay" data-bs-dismiss="modal">Ở lại<span class="back-confirm-en">(Stay)</span></button>' +
+        '          <button type="button" class="back-confirm-btn back-confirm-leave" id="backConfirmYes">Đồng ý<span class="back-confirm-en">(Confirm)</span></button>' +
+        '        </div>' +
+        '      </div>' +
+        '    </div>' +
+        '  </div>' +
+        '</div>';
+    document.body.insertAdjacentHTML('beforeend', backModalHtml);
+    var backModal = new bootstrap.Modal(document.getElementById('backConfirm'));
+    document.getElementById('btnBack').addEventListener('click', function (e) {
+        e.preventDefault();
+        backModal.show();
+    });
+    document.getElementById('backConfirmYes').addEventListener('click', function () {
+        location.href = 'index.html';
+    });
+</script>
+</body>
+</html>

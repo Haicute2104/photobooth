@@ -1,0 +1,36 @@
+.mobile-frame.design-picker {
+    background: #fff url('../images/ChonKhungThietKe/bg.png') center / 100% 100% no-repeat;
+    font-family: Arial, sans-serif;
+}
+.design-back { position: absolute; z-index: 2; left: 6.5%; top: 3%; color: #ce3029; font: 400 10cqw/1 Arial, sans-serif; text-decoration: none; }
+.design-logo { position: absolute; top: 4.1%; left: 50%; width: 15%; height: auto; transform: translateX(-50%); }
+.design-heading { position: absolute; top: 12.5%; width: 100%; margin: 0; color: #e3414e; font: 800 6.4cqw/1.1 Arial, sans-serif; text-align: center; }
+.design-subtitle { position: absolute; top: 16.8%; width: 100%; margin: 0; color: #343d90; font: 600 2.8cqw/1 Arial, sans-serif; text-align: center; }
+.design-picker .s3-preview { top: 20.4%; width: 48.8%; height: 31.7%; aspect-ratio: auto; background: transparent; border: 0; }
+.design-picker .s3-preview > img { object-fit: contain; }
+.design-picker .s3-preview > [hidden] { display: none; }
+.design-picker .s3-preload { border-radius: 0; }
+.design-picker .s3-qty { top: 53.5%; width: 48%; height: 13%; aspect-ratio: auto; justify-content: flex-start; background: none; border: 0; border-radius: 0; color: #E14450; font-family: Arial, sans-serif; }
+.design-picker .s3-qty[hidden] { display: none; }
+.design-picker .s3-qty-title { font-size: 4.5cqw; letter-spacing: 0; }
+.design-picker .s3-qty-sub { display: none; }
+.design-picker .stepper { width: 76%; height: 5.6cqh; margin-top: 1cqw; padding: 0 3cqw; border: 0; background: #f8f7f0; }
+.design-picker .stepper button { width: 6cqw; color: #e3414e; font-size: 6cqw; }
+.design-picker .stepper output { color: #e3414e; font-size: 4cqw; }
+.design-picker .s3-price { margin: 2cqw 0 0; color: #FFE6AE; font-size: 4.5cqw; letter-spacing: 0; }
+.design-picker .s3-thumbs { top: 71.2%; gap: 4.5cqw; padding: 0 6cqw; }
+.design-picker .thumb { width: 18.5cqw; height: 23.3cqw; background: #e9a77d; }
+.design-picker .thumb img { width: 100%; height: 100%; object-fit: contain; }
+.design-picker .s3-next { top: 86%; width: 57%; }
+
+/* Show a scrollbar for browsing the complete frame collection. */
+.design-picker .s3-thumbs {
+    padding-bottom: 2cqw;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #e3414e #f8e4d4;
+    -ms-overflow-style: auto;
+}
+.design-picker .s3-thumbs::-webkit-scrollbar { display: block; height: 1.4cqw; background: #f8e4d4; }
+.design-picker .s3-thumbs::-webkit-scrollbar-thumb { background: #e3414e; border-radius: 1cqw; }
+.design-picker .s3-thumbs:focus-visible { outline: 2px solid #e3414e; }

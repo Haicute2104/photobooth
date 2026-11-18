@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Chọn thiết kế khung - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=sf-all-1" rel="stylesheet" />
+    <link href="css/chon-thiet-ke.css?v=4" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame s2 design-picker">
+    <a class="design-back" href="index.html" aria-label="Quay lại"><img src="images/Icons/back.png" alt="Quay lại"></a>
+    <img class="design-logo" src="images/ChonKhungThietKe/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+    <h1 class="design-heading">CHỌN KHUNG THIẾT KẾ</h1>
+    <p class="design-subtitle">( CHOOSE A FRAME DESIGN )</p>
+
+
+    <!-- Xem trước khung đang chọn -->
+    <div class="s3-preview" id="preview">
+        <div class="s3-preload" id="previewPreload" aria-hidden="true"></div>
+        <img id="previewImg" src="" alt="Xem trước khung" hidden />
+    </div>
+
+    <!-- Số ảnh in -->
+    <section class="s3-qty">
+        <h2 class="s3-qty-title">SỐ ẢNH IN</h2>
+        <p class="s3-qty-sub">(PRINT QUANTITY)</p>
+        <div class="stepper">
+            <button type="button" id="qtyMinus" aria-label="Giảm">−</button>
+            <output id="qty">1</output>
+            <button type="button" id="qtyPlus" aria-label="Tăng">+</button>
+        </div>
+        <p class="s3-price" id="price">Đang tải giá...</p>
+    </section>
+
+    <!-- Danh sách thiết kế do JS vẽ từ cloud/cache; lúc load chỉ hiện text -->
+    <div class="s3-thumbs" tabindex="0" role="region" aria-label="Frame designs">
+        <p class="s3-empty">Đang tải thiết kế...</p>
+    </div>
+
+    <a href="#" class="s2-next s3-next disabled" id="btnNext" aria-disabled="true">
+        <img src="images/ChonKhung/Continue.png" alt="Tiếp theo" />
+    </a>
+</main>
+
+<script src="bootstrap-5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="js/booth-cloud.js?v=20261117-free-order"></script>
+<script>
+    (function () {
+        var TAKE = 10000, EXTRA = 10000, MIN_QTY = 1, MAX_QTY = 10;
+        var qty = 1, design = '1', shots = 3, priceReady = false, frameReady = false;
+
+        var qtyEl = document.getElementById('qty');
+        var priceEl = document.getElementById('price');
+        var btnMinus = document.getElementById('qtyMinus');
+        var btnPlus = document.getElementById('qtyPlus');
+        var btnNext = document.getElementById('btnNext');
+        var previewPreload = document.getElementById('previewPreload');
+        var previewImg = document.getElementById('previewImg');
+        var thumbs = [];
+        var thumbBox = document.querySelector('.s3-thumbs');
+        var size = 'full';
+        try { localStorage.setItem('frameSize', size); } catch (e) {}
+        try { sessionStorage.removeItem('hoaloPhoneSend'); } catch (ePhone) {}
+        thumbBox.addEventListener('wheel', function (event) {
+            if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+            var before = thumbBox.scrollLeft;
+            var delta = event.deltaY;
+            if (event.deltaMode === 1) delta *= 16;
+            if (event.deltaMode === 2) delta *= thumbBox.clientWidth;
+            thumbBox.scrollLeft += delta;
+            if (thumbBox.scrollLeft !== before) event.preventDefault();
+        }, { passive: false });
+
+
+        function orderTotal() {
+            return TAKE + (qty - 1) * EXTRA;
+        }
+
+        function render() {
+            qtyEl.textContent = qty;
+            priceEl.textContent = priceReady ? orderTotal().toLocaleString('vi-VN') + ' VNĐ' : 'Đang tải giá...';
+            btnNext.classList.toggle('disabled', !frameReady || !priceReady);
+            btnNext.setAttribute('aria-disabled', String(!frameReady || !priceReady));
+            btnMinus.disabled = qty <= MIN_QTY || document.querySelector('.s3-qty').hidden;
+            btnPlus.disabled = qty >= MAX_QTY || document.querySelector('.s3-qty').hidden;
+            btnNext.href = 'chup-hinh.html?design=' + design + '&qty=' + qty + '&shots=' + shots;
+            try {
+                localStorage.setItem('frameSize', size);
+                localStorage.setItem('frameDesign', design);
+                localStorage.setItem('frameShots', shots);
+                localStorage.setItem('printQty', qty);
+                localStorage.setItem('orderTotal', String(orderTotal()));
+            } catch (e) {}
+        }
+
+        btnMinus.addEventListener('click', function () { if (qty > MIN_QTY) { qty--; render(); } });
+        btnPlus.addEventListener('click', function () { if (qty < MAX_QTY) { qty++; render(); } });
+        btnNext.addEventListener('click', function (event) {
+            if (!frameReady || !priceReady) event.preventDefault();
+        });
+
+        function bindThumb(t) {
+            t.addEventListener('click', function () {
+                var all = thumbBox.querySelectorAll('.thumb');
+                all.forEach(function (x) { x.classList.remove('active'); });
+                t.classList.add('active');
+                design = t.dataset.id || '1';
+                frameReady = true;
+                shots = parseInt(t.dataset.shots, 10) || 3;
+                try {
+                    localStorage.setItem('frameDesign', design);
+                    localStorage.setItem('frameShots', shots);
+                    if (t.dataset.frame) localStorage.setItem('frameFile', t.dataset.frame);
+                    else if (t.dataset.full) localStorage.setItem('frameFile', t.dataset.full);
+                    else localStorage.removeItem('frameFile');
+                } catch (e) {}
+
+                var full = t.dataset.full || (t.querySelector('img') ? t.querySelector('img').src : '');
+                if (previewPreload) previewPreload.hidden = !!full;
+                previewImg.hidden = !full;
+                if (full) previewImg.src = full;
+                previewImg.removeAttribute('src');
+                previewImg.hidden = true;
+                previewPreload.hidden = false;
+                t.frameItem.loadPreview().then(function (url) {
+                    if (!t.classList.contains('active') || !t.isConnected) return;
+                    previewImg.src = url;
+                    previewImg.hidden = false;
+                    previewPreload.hidden = true;
+                }).catch(function () {
+                    if (!t.classList.contains('active') || !t.isConnected) return;
+                    var img = t.querySelector('img');
+                    if (img && img.getAttribute('src')) {
+                        previewImg.src = img.src;
+                        previewImg.hidden = false;
+                        previewPreload.hidden = true;
+                    }
+                });
+                render();
+            });
+        }
+
+        function useThumbs(list) {
+            if (!list || !list.length) return;
+            list.forEach(bindThumb);
+            var preferred = '';
+            try { preferred = localStorage.getItem('frameDesign') || design || ''; } catch (e) {}
+            var pick = list[0];
+            if (preferred) {
+                for (var i = 0; i < list.length; i++) {
+                    var id = list[i].dataset.id || '';
+                    if (id === preferred || id.indexOf(preferred) !== -1 || preferred.indexOf(id) !== -1) {
+                        pick = list[i];
+                        break;
+                    }
+                    var num = /(\d+)$/.exec(preferred);
+                    if (num && (id === num[1] || id.slice(-1) === num[1] || new RegExp('frame_' + num[1] + '$', 'i').test(id))) {
+                        pick = list[i];
+                        break;
+                    }
+                }
+            }
+            pick.click();
+        }
+
+        thumbBox.innerHTML = '<p class="s3-empty">Đang tải thiết kế...</p>';
+
+        var thumbObserver;
+        var thumbQueue = [], activeThumbLoads = 0;
+        function pumpThumbs() {
+            while (activeThumbLoads < 3 && thumbQueue.length) {
+                var job = thumbQueue.shift();
+                if (!job.button.isConnected) continue;
+                activeThumbLoads++;
+                (function (job) {
+                    job.item.loadThumb().then(function (url) {
+                        job.img.src = url;
+                    }).catch(function () {
+                        job.button.classList.add('thumb-text');
+                        job.button.textContent = job.img.alt;
+                    }).finally(function () { activeThumbLoads--; pumpThumbs(); });
+                })(job);
+            }
+        }
+        function paintItems(items) {
+            if (thumbObserver) thumbObserver.disconnect();
+            thumbQueue = [];
+            thumbObserver = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (!entry.isIntersecting) return;
+                    thumbObserver.unobserve(entry.target);
+                    thumbQueue.push(entry.target.thumbJob);
+                });
+                pumpThumbs();
+            }, { root: thumbBox, rootMargin: '0px 100px' });
+            thumbBox.innerHTML = '';
+            items.forEach(function (item, idx) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'thumb';
+                b.frameItem = item;
+                b.dataset.id = item.id;
+                b.dataset.frame = item.frameRel || '';
+                b.dataset.full = item.previewUrl || item.thumbUrl || '';
+                b.dataset.shots = item.shots || 3;
+                var img = document.createElement('img');
+                img.alt = 'Thiết kế ' + (idx + 1);
+                img.decoding = 'async';
+                img.onerror = function () {
+                    var fb = item.thumbUrl && img.src !== item.thumbUrl ? item.thumbUrl : '';
+                    if (fb && img.src !== fb) { img.src = fb; return; }
+                    // Không có ảnh: hiện text thay vì ô trống
+                    b.classList.add('thumb-text');
+                    b.textContent = 'Thiết kế ' + (idx + 1);
+                };
+                b.appendChild(img);
+                thumbBox.appendChild(b);
+                b.thumbJob = { button: b, img: img, item: item };
+                thumbObserver.observe(b);
+            });
+            thumbBox.style.visibility = '';
+            return useThumbs(Array.prototype.slice.call(thumbBox.querySelectorAll('.thumb')));
+        }
+
+        var listed = window.hoaloListSizeFrames ? window.hoaloListSizeFrames(size, function (fresh) {
+            // Sync ngam: chi va khi cloud doi danh sach (them/sua/xoa).
+            if (!fresh || !fresh.length) return;
+            var cur = thumbBox.querySelectorAll('.thumb');
+            var sig = Array.prototype.map.call(cur, function (t) { return t.dataset.id; }).join('|');
+            var next = fresh.map(function (it) { return it.id; }).join('|');
+            if (next && next !== sig) paintItems(fresh);
+        }) : Promise.resolve([]);
+        listed.then(function (items) {
+            if (!items || !items.length) {
+                thumbBox.innerHTML = '<p class="s3-empty">Không tải được thiết kế. Vui lòng thử lại.</p>';
+                return;
+            }
+            paintItems(items);
+        }).catch(function () {
+            thumbBox.innerHTML = '<p class="s3-empty">Không tải được thiết kế. Vui lòng thử lại.</p>';
+        });
+
+        function applyPrices(take, extra) {
+            if (take >= 0) TAKE = take;
+            if (extra >= 0) EXTRA = extra;
+            priceReady = true;
+            render();
+        }
+
+        fetch('config.json', { cache: 'no-store' })
+            .then(function (r) { return r.json(); })
+            .then(function (cfg) {
+                var minQty = parseInt(cfg.printMin, 10);
+                var maxQty = parseInt(cfg.printMax, 10);
+                if (minQty > 0) MIN_QTY = minQty;
+                if (maxQty >= MIN_QTY) MAX_QTY = maxQty;
+                if (qty < MIN_QTY) qty = MIN_QTY;
+                if (qty > MAX_QTY) qty = MAX_QTY;
+                if (!priceReady && !window.hoaloGetPrices) applyPrices(parseInt(cfg.takePhotoPrice, 10), parseInt(cfg.printPrice, 10));
+                else render();
+            })
+            .catch(function () {});
+
+        if (window.hoaloGetPrices) {
+            window.hoaloGetPrices().then(function (p) {
+                priceReady = true;
+                applyPrices(p.takePhotoPrice, p.printPrice);
+            }).catch(function () { applyPrices(TAKE, EXTRA); });
+        }
+
+        render();
+        window.addEventListener('hoalo-free', function () { render(); });
+    })();
+</script>
+</body>
+</html>

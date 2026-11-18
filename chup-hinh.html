@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Chụp hình - Hỏa Lò Prison</title>
+    <link href="bootstrap-5.3.8/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="css/main.css?v=sf-all-1" rel="stylesheet" />
+    <link href="css/chup-hinh.css?v=3" rel="stylesheet" />
+    <link href="css/sf-global.css?v=1" rel="stylesheet" />
+</head>
+<body>
+
+<main class="mobile-frame s4 capture-screen" id="frame">
+    <!-- Canon EOS R100 qua EOS Webcam Utility, 1280x720. Không mở được thì hiện text -->
+    <video class="s4-camera mirror" id="video" autoplay playsinline muted hidden></video>
+    <div class="s4-camera s4-no-signal" id="demo">Không có tín hiệu camera.<br>Vui lòng kiểm tra kết nối máy ảnh.</div>
+
+    <div class="s4-shot-area" id="shotArea">
+        <div class="s4-countdown" id="countdown" hidden>5</div>
+    </div>
+    <div class="s4-flash" id="flash"></div>
+    <div class="capture-save-status" id="saveStatus" role="status" aria-live="polite" hidden></div>
+
+    <a class="capture-back" href="chon-thiet-ke.html" aria-label="Quay lại"><img src="images/Icons/back.png" alt="Quay lại"></a>
+    <img class="capture-logo" src="images/ChonKhungThietKe/logo-hoa-lo.png" alt="Hỏa Lò Prison" />
+    <h1 class="capture-heading">CHỤP HÌNH</h1>
+    <p class="capture-subtitle">( TAKE A PHOTO )</p>
+
+    <!-- Hẹn giờ -->
+    <div class="s4-timer" role="group" aria-label="Hẹn giờ">
+        <span class="s4-timer-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" fill="none">
+                <path d="M14.3344 6.33376V14.3344L19.6682 17.0013M27.6688 14.3344C27.6688 21.6988 21.6988 27.6688 14.3344 27.6688C6.97001 27.6688 1 21.6988 1 14.3344C1 6.97001 6.97001 1 14.3344 1C21.6988 1 27.6688 6.97001 27.6688 14.3344Z" stroke-width="2" stroke-linecap="round" stroke="white"/>
+            </svg>
+        </span>
+        <button type="button" data-sec="0">Tắt hẹn giờ</button>
+        <button type="button" data-sec="3">3s</button>
+        <button type="button" class="active" data-sec="5">5s</button>
+        <button type="button" data-sec="10">10s</button>
+    </div>
+
+    <p class="capture-hint">CHẠM ĐỂ BẮT ĐẦU CHỤP</p>
+    <button type="button" class="s4-shutter" id="btnShutter" aria-label="Chạm để bắt đầu chụp"></button>
+
+    <!-- Các ô ảnh đã chụp: bấm vào ô để chọn chụp lại -->
+    <div class="s4-slots" id="slots"></div>
+</main>
+
+<script src="bootstrap-5.3.8/js/bootstrap.bundle.min.js"></script>
+<script src="js/booth-cloud.js?v=20261117-free-order"></script>
+<script type="module">
+    import { applyBeautyInPlace } from "./js/beauty-filter.sample.js";
+
+    (function () {
+        function startCaptureSession() {
+            // A retake is a new batch: do not overwrite the previous order's files.
+            ['photos', 'layout', 'layoutFit', 'hoaloOrderId', 'hoaloQrUrl'].forEach(function (key) {
+                sessionStorage.removeItem(key);
+            });
+        }
+        startCaptureSession();
+
+        var qShots = '';
+        try { qShots = new URLSearchParams(location.search).get('shots'); } catch (e) {}
+        var SHOT_COUNT = parseInt(qShots, 10)
+            || (window.hoaloGetSelectedShots ? window.hoaloGetSelectedShots() : null)
+            || parseInt(localStorage.getItem('frameShots'), 10)
+            || 5;        // số ảnh cần chụp, sẽ bị ghi đè bởi số lỗ từ configptb
+
+        // Lỗ camera chỉ lấy từ JSON khung của configptb (cameraRects, hoặc cameraRect).
+        function holesOf(meta) {
+            var src = [];
+            if (meta && meta.cameraRects && meta.cameraRects.length) src = meta.cameraRects;
+            else if (meta && meta.cameraRect) src = [meta.cameraRect];
+            var out = [];
+            for (var i = 0; i < src.length; i++) {
+                var w = src[i] && +src[i].w;
+                var h = src[i] && +src[i].h;
+                if (w > 1 && h > 1) out.push({ w: w, h: h });
+            }
+            return out;
+        }
+
+        function readSyncHoles() {
+            try {
+                var fr = String(localStorage.getItem('frameFile') || localStorage.getItem('frameDesign') || '');
+                var fm = /(Templates|tmp2)\/frame_(\d+)/i.exec(fr);
+                if (!fm) return [];
+                var jr = fm[1] + '/frame_' + parseInt(fm[2], 10) + '-thumb.json';
+                for (var k = 0; k < localStorage.length; k++) {
+                    var key = localStorage.key(k);
+                    if (key && key.indexOf('hoaloFrameJson:') === 0 &&
+                        key.slice(-(jr.length + 1)) === ':' + jr) {
+                        var found = holesOf(JSON.parse(localStorage.getItem(key)));
+                        if (found.length) return found;
+                    }
+                }
+                var s = sessionStorage.getItem('hoaloFrameMetaJson:' + jr);
+                if (s) return holesOf(JSON.parse(s));
+            } catch (e) {}
+            return [];
+        }
+
+        SHOT_COUNT += 2;
+        var holes = readSyncHoles();
+        if (holes.length) {
+            SHOT_COUNT = holes.length + 2;
+            try { localStorage.setItem('frameShots', String(holes.length)); } catch (e1) {}
+        }
+        var CAM_W = 1920, CAM_H = 1080; // EOS R100 / EOS Webcam Utility
+
+        var frame = document.getElementById('frame');
+        var video = document.getElementById('video');
+        var demo = document.getElementById('demo');
+        var shotArea = document.getElementById('shotArea');
+        var countdownEl = document.getElementById('countdown');
+        var flash = document.getElementById('flash');
+        var btnShutter = document.getElementById('btnShutter');
+        var slotsEl = document.getElementById('slots');
+        var timerBtns = document.querySelectorAll('.s4-timer button');
+
+        var timerSec = 5, current = 0, busy = false, useCamera = false, shooting = false;
+        var photos = new Array(SHOT_COUNT).fill(null);
+        var slots = [];
+        var countdownIv = null;
+        var shotCanvas = document.createElement('canvas');
+        var idleTimer = window.hoaloArmCaptureTimeout ? window.hoaloArmCaptureTimeout() : null;
+
+        // Ô ngắm gốc (CSS 16:9 đã căn). Lỗ khung được đặt lọt trong ô này, không đẩy timer/nút.
+        var stage = null;
+        var stageTries = 0;
+
+        function readStage() {
+            if (stage) return stage;
+            var fr = frame.getBoundingClientRect();
+            var box = shotArea.getBoundingClientRect();
+            if (fr.width < 2 || box.width < 2 || box.height < 2) return null;
+            stage = {
+                l: (box.left - fr.left) / fr.width,
+                t: (box.top - fr.top) / fr.height,
+                w: box.width / fr.width,
+                h: box.height / fr.height
+            };
+            return stage;
+        }
+
+        function placeHole(index) {
+            if (!holes.length) return;
+            var st = readStage();
+            if (!st) {
+                if (stageTries < 10) {
+                    stageTries++;
+                    requestAnimationFrame(function () { placeHole(index); });
+                }
+                return;
+            }
+            var hole = holes[index % holes.length];
+            if (!hole) return;
+            var fr = frame.getBoundingClientRect();
+            if (fr.width < 2 || fr.height < 2) return;
+            var sw = st.w * fr.width;
+            var sh = st.h * fr.height;
+            var sl = st.l * fr.width;
+            var stt = st.t * fr.height;
+            var ratio = hole.w / hole.h;
+            var stageRatio = sw / sh;
+            var w, h, left, top;
+            if (ratio >= stageRatio) {
+                w = sw;
+                h = w / ratio;
+                left = sl;
+                top = stt + (sh - h) / 2;
+            } else {
+                h = sh;
+                w = h * ratio;
+                top = stt;
+                left = sl + (sw - w) / 2;
+            }
+            [video, demo, shotArea].forEach(function (el) {
+                if (!el) return;
+                el.style.left = (left / fr.width * 100) + '%';
+                el.style.top = (top / fr.height * 100) + '%';
+                el.style.width = (w / fr.width * 100) + '%';
+                el.style.height = 'auto';
+                el.style.aspectRatio = hole.w + ' / ' + hole.h;
+            });
+        }
+
+        function mountSlots() {
+            slotsEl.innerHTML = '';
+            slots = [];
+            photos = new Array(SHOT_COUNT).fill(null);
+            current = 0;
+            for (var i = 0; i < SHOT_COUNT; i++) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'slot';
+                b.textContent = i + 1;
+                b.dataset.index = i;
+                b.addEventListener('click', function () {
+                    if (busy) return;
+                    current = +this.dataset.index;
+                    renderSlots();
+                });
+                slotsEl.appendChild(b);
+                slots.push(b);
+            }
+            renderSlots();
+        }
+
+        function renderSlots() {
+            slots.forEach(function (s, i) {
+                s.classList.toggle('active', i === current);
+                s.classList.toggle('done', !!photos[i]);
+                s.style.backgroundImage = photos[i] ? 'url(' + photos[i] + ')' : '';
+            });
+            placeHole(current);
+        }
+
+        mountSlots();
+
+        function adoptHoles(list) {
+            if (!list || !list.length) return;
+            var started = shooting || busy;
+            if (!started) {
+                for (var i = 0; i < photos.length; i++) if (photos[i]) started = true;
+            }
+            if (started) {
+                if (list.length === holes.length) {
+                    holes = list;
+                    placeHole(current);
+                }
+                return;
+            }
+            var changed = list.length + 2 !== SHOT_COUNT;
+            holes = list;
+            SHOT_COUNT = list.length + 2;
+            try { localStorage.setItem('frameShots', String(list.length)); } catch (e2) {}
+            if (changed) mountSlots();
+            else placeHole(current);
+        }
+
+        if (window.hoaloGetSelectedFrameMeta) {
+            window.hoaloGetSelectedFrameMeta().then(function (meta) {
+                adoptHoles(holesOf(meta));
+            }).catch(function () { shutterReady = null; });
+        }
+
+        // Ưu tiên Canon EOS R100. Bỏ facingMode để không dính webcam laptop.
+        function canonRank(label) {
+            var s = (label || '').toLowerCase();
+            if (s.indexOf('r100') !== -1) return 100;
+            if (s.indexOf('eos') !== -1 && s.indexOf('canon') !== -1) return 90;
+            if (s.indexOf('eos') !== -1) return 80;
+            if (s.indexOf('canon') !== -1) return 70;
+            if (s.indexOf('webcam utility') !== -1) return 60;
+            return 0;
+        }
+
+        function pickCanon(devices) {
+            var best = null, rank = 0;
+            devices.forEach(function (d) {
+                if (d.kind !== 'videoinput') return;
+                var r = canonRank(d.label);
+                if (r > rank) { rank = r; best = d; }
+            });
+            return best;
+        }
+
+        function constraintsFor(deviceId, exact) {
+            var video = {
+                width: exact ? { exact: CAM_W } : { ideal: CAM_W },
+                height: exact ? { exact: CAM_H } : { ideal: CAM_H },
+                frameRate: { ideal: 30, max: 30 }
+            };
+            if (exact) video.resizeMode = 'none';
+            if (deviceId) video.deviceId = { exact: deviceId };
+            return { audio: false, video: video };
+        }
+
+        function stopStream(stream) {
+            if (!stream || !stream.getTracks) return;
+            try {
+                stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} });
+            } catch (e) {}
+        }
+
+        function releaseCamera() {
+            try { video.pause(); } catch (e) {}
+            var stream = video.srcObject;
+            video.srcObject = null;
+            stopStream(stream);
+        }
+
+        function withTimeout(promise, ms) {
+            return new Promise(function (resolve, reject) {
+                var settled = false;
+                var timer = setTimeout(function () {
+                    if (settled) return;
+                    settled = true;
+                    reject(new Error('timeout'));
+                }, ms);
+                Promise.resolve(promise).then(function (value) {
+                    if (settled) { stopStream(value); return; }
+                    settled = true;
+                    clearTimeout(timer);
+                    resolve(value);
+                }, function (err) {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    reject(err);
+                });
+            });
+        }
+
+        function lock720(stream) {
+            var track = stream.getVideoTracks()[0];
+            if (!track || !track.applyConstraints) return Promise.resolve(stream);
+            var settings = track.getSettings ? track.getSettings() : {};
+            if (settings.width === CAM_W && settings.height === CAM_H) return Promise.resolve(stream);
+            return new Promise(function (resolve) {
+                var done = false;
+                var timer = setTimeout(function () {
+                    if (done) return;
+                    done = true;
+                    resolve(stream);
+                }, 3000);
+                track.applyConstraints({ width: { exact: CAM_W }, height: { exact: CAM_H } })
+                    .catch(function () {
+                        return track.applyConstraints({ width: { ideal: CAM_W }, height: { ideal: CAM_H } });
+                    })
+                    .then(function () {
+                        if (done) return;
+                        done = true;
+                        clearTimeout(timer);
+                        resolve(stream);
+                    }, function () {
+                        if (done) return;
+                        done = true;
+                        clearTimeout(timer);
+                        resolve(stream);
+                    });
+            });
+        }
+
+        function openExact(deviceId) {
+            return navigator.mediaDevices.getUserMedia(constraintsFor(deviceId, true))
+                .catch(function () {
+                    return navigator.mediaDevices.getUserMedia(constraintsFor(deviceId, false));
+                });
+        }
+
+        function attach(stream) {
+            video.srcObject = stream;
+            function show() {
+                video.hidden = false;
+                demo.hidden = true;
+                useCamera = true;
+            }
+            if (video.videoWidth) show();
+            else video.addEventListener('loadedmetadata', show, { once: true });
+        }
+
+        function loadBoothConfig() {
+            return fetch('config.json', { cache: 'no-store' })
+                .then(function (r) { if (!r.ok) throw new Error('config'); return r.json(); })
+                .catch(function () { return {}; });
+        }
+
+        function openPreferred(configuredId) {
+            var md = navigator.mediaDevices;
+            return md.getUserMedia(constraintsFor(null, false)).then(function (probe) {
+                return md.enumerateDevices().then(function (devices) {
+                    var canon = pickCanon(devices);
+                    var want = configuredId
+                        ? configuredId
+                        : (canon && canon.deviceId ? canon.deviceId : '');
+                    var track = probe.getVideoTracks()[0];
+                    var currentId = track && track.getSettings ? track.getSettings().deviceId : '';
+                    if (!want || want === currentId) return lock720(probe);
+                    stopStream(probe);
+                    return new Promise(function (resolve, reject) {
+                        setTimeout(function () {
+                            openExact(want).then(resolve, function () {
+                                if (canon && canon.deviceId && canon.deviceId !== want) resolve(openExact(canon.deviceId));
+                                else reject();
+                            });
+                        }, 400);
+                    });
+                }, function (err) {
+                    stopStream(probe);
+                    throw err;
+                });
+            }).catch(function () {
+                if (configuredId) {
+                    return openExact(configuredId).catch(function () {
+                        return md.enumerateDevices().then(function (devices) {
+                            var canon = pickCanon(devices);
+                            if (canon && canon.deviceId) return openExact(canon.deviceId);
+                            return Promise.reject();
+                        });
+                    });
+                }
+                return md.enumerateDevices().then(function (devices) {
+                    var canon = pickCanon(devices);
+                    if (canon && canon.deviceId) return openExact(canon.deviceId);
+                    return Promise.reject();
+                });
+            });
+        }
+
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            loadBoothConfig().then(function (cfg) {
+                var camW = cfg && parseInt(cfg.cameraCaptureWidth, 10);
+                var camH = cfg && parseInt(cfg.cameraCaptureHeight, 10);
+                if (camW >= 320) CAM_W = Math.min(camW, 1920);
+                if (camH >= 240) CAM_H = Math.min(camH, 1080);
+                var configuredId = cfg && cfg.cameraDeviceId ? String(cfg.cameraDeviceId).trim() : '';
+                return withTimeout(openPreferred(configuredId), 12000);
+            }).then(attach).catch(function () { /* giữ ảnh demo */ });
+
+            window.addEventListener('pagehide', function () {
+                if (countdownIv) clearInterval(countdownIv);
+                if (finishTimer) clearTimeout(finishTimer);
+                if (idleTimer) idleTimer.cancel();
+                releaseCamera();
+            });
+            window.addEventListener('resize', function () { placeHole(current); });
+        }
+
+        // Hẹn giờ
+        timerBtns.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                if (busy) return;
+                timerBtns.forEach(function (x) { x.classList.remove('active'); });
+                btn.classList.add('active');
+                timerSec = +btn.dataset.sec;
+                showIdle();
+            });
+        });
+
+        // Âm thanh chụp: tạo bằng Web Audio (không cần file).
+        // Trình duyệt chỉ cho phát âm thanh sau khi người dùng chạm, nên mở AudioContext ngay lúc bấm nút.
+        var audioCtx = null;
+        var shutterBuffer = null;
+        var shutterReady = null;
+        var lastShutterDuration = 350;
+        var finishTimer = null;
+
+        function unlockAudio() {
+            try {
+                audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+                var resumed = audioCtx.state === 'suspended' ? audioCtx.resume() : Promise.resolve();
+                if (!shutterReady) {
+                    shutterReady = fetch('assets/sounds/shutter-iphone.mp3')
+                        .then(function (response) { if (!response.ok) throw new Error('sound'); return response.arrayBuffer(); })
+                        .then(function (data) { return audioCtx.decodeAudioData(data); })
+                        .then(function (buffer) { shutterBuffer = buffer; })
+                        .catch(function () { shutterReady = null; })
+                        ;
+                }
+                return Promise.all([resumed, shutterReady]).catch(function () {});
+            } catch (e) { return Promise.resolve(); }
+        }
+
+        // Một tiếng "tách" ngắn: tiếng nhiễu tắt dần, lọc quanh tần số freq
+        function noiseBurst(start, dur, freq, vol) {
+            var len = Math.ceil(audioCtx.sampleRate * dur);
+            var buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+            var data = buf.getChannelData(0);
+            for (var i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+
+            var src = audioCtx.createBufferSource();
+            var filter = audioCtx.createBiquadFilter();
+            var gain = audioCtx.createGain();
+            src.buffer = buf;
+            filter.type = 'bandpass';
+            filter.frequency.value = freq;
+            filter.Q.value = 0.8;
+            gain.gain.value = vol;
+            src.connect(filter).connect(gain).connect(audioCtx.destination);
+            src.start(start);
+        }
+
+        // Tiếng màn trập máy ảnh: "tách" (mở) + "tách" trầm hơn (đóng)
+        function playShutterSound() {
+            lastShutterDuration = 350;
+            if (!audioCtx || audioCtx.state !== 'running') return;
+            try {
+                if (shutterBuffer) {
+                    var source = audioCtx.createBufferSource();
+                    source.buffer = shutterBuffer;
+                    source.connect(audioCtx.destination);
+                    source.start();
+                    lastShutterDuration = Math.max(350, Math.ceil(shutterBuffer.duration * 1000));
+                    return;
+                }
+                var t = audioCtx.currentTime;
+                noiseBurst(t, 0.045, 3500, 1);
+                noiseBurst(t + 0.09, 0.07, 1600, 0.8);
+            } catch (e) {}
+        }
+
+        // Tiếng báo mỗi giây; giây cuối cao hơn để báo sắp chụp.
+        function playCountdownSound(n) {
+            if (!audioCtx || audioCtx.state !== 'running') return;
+            try {
+                var now = audioCtx.currentTime;
+                var tone = audioCtx.createOscillator();
+                var gain = audioCtx.createGain();
+                tone.type = 'sine';
+                tone.frequency.value = n === 1 ? 1100 : 800;
+                gain.gain.setValueAtTime(0.0001, now);
+                gain.gain.exponentialRampToValueAtTime(0.16, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+                tone.connect(gain).connect(audioCtx.destination);
+                tone.start(now);
+                tone.stop(now + 0.13);
+            } catch (e) {}
+        }
+
+        function finishSequence() {
+            shooting = false;
+            busy = false;
+            if (countdownIv) { clearInterval(countdownIv); countdownIv = null; }
+            btnShutter.disabled = false;
+            showIdle();
+        }
+
+        function beginShot() {
+            if (!shooting) return;
+            busy = true;
+            btnShutter.disabled = true;
+            var left = timerSec;
+            if (left <= 0) {
+                afterShot(capture());
+                return;
+            }
+            showNumber(left);
+            if (countdownIv) clearInterval(countdownIv);
+            countdownIv = setInterval(function () {
+                try {
+                    left--;
+                    if (left <= 0) {
+                        clearInterval(countdownIv);
+                        countdownIv = null;
+                        countdownEl.hidden = true;
+                        afterShot(capture());
+                    } else {
+                        showNumber(left);
+                    }
+                } catch (e) {
+                    finishSequence();
+                }
+            }, 1000);
+        }
+
+        function saveCapturedPhotos() {
+            countdownEl.hidden = true;
+            var saveStatus = document.getElementById('saveStatus');
+            saveStatus.hidden = false;
+            saveStatus.textContent = 'Đang lưu ảnh…';
+            btnShutter.disabled = true;
+            window.hoaloEnsureDownloadOrderAsync().then(function (order) {
+                return fetch('/api/v1/capture-photos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ orderId: order.orderId, photos: photos })
+                });
+            }).then(function (r) {
+                if (!r.ok) throw new Error('save photos');
+                return r.json();
+            }).then(function (result) {
+                if (!result.ok || !Array.isArray(result.composePhotos) ||
+                    result.composePhotos.length !== photos.length) throw new Error('save photos');
+                // Only store URLs for the independent composition copies, not large data URLs.
+                sessionStorage.setItem('photos', JSON.stringify(result.composePhotos));
+                location.replace('gan-anh.html');
+            }).catch(function () {
+                saveStatus.textContent = 'Lưu ảnh thất bại. Chạm nút chụp để thử lại.';
+                btnShutter.disabled = false;
+                busy = false;
+            });
+        }
+
+        function afterShot(saved) {
+            if (saved && photos.every(Boolean)) {
+                shooting = false;
+                busy = true;
+                if (countdownIv) { clearInterval(countdownIv); countdownIv = null; }
+                if (idleTimer) idleTimer.cancel();
+                finishTimer = setTimeout(function () {
+                    finishTimer = null;
+                    saveCapturedPhotos();
+                }, lastShutterDuration);
+                return;
+            }
+            if (!shooting || !saved) { finishSequence(); return; }
+            setTimeout(function () { beginShot(); }, timerSec > 0 ? 600 : 1000);
+        }
+
+        // Một lần bấm: tự đếm giờ và chụp đủ 5 tấm
+        btnShutter.addEventListener('click', function () {
+            if (busy || shooting) return;
+            if (photos.every(Boolean)) { busy = true; saveCapturedPhotos(); return; }
+            if (idleTimer) idleTimer.cancel();
+            var audioReady = unlockAudio();
+            busy = true;
+            btnShutter.disabled = true;
+            shooting = true;
+            if (photos[current]) {
+                var empty = photos.findIndex(function (p) { return !p; });
+                if (empty !== -1) current = empty;
+            }
+            audioReady.then(function () { beginShot(); });
+        });
+
+        // Lúc chờ: hiện số giây đang chọn trong vòng tròn (ẩn khi tắt hẹn giờ)
+        function showIdle() {
+            countdownEl.textContent = timerSec;
+            countdownEl.hidden = true;
+        }
+
+        function showNumber(n) {
+            playCountdownSound(n);
+            countdownEl.hidden = false;
+            countdownEl.textContent = n;
+            countdownEl.classList.remove('tick');
+            void countdownEl.offsetWidth;
+            countdownEl.classList.add('tick');
+        }
+
+        // Cắt đúng tỷ lệ lỗ đang chụp (ảnh phủ kín ô ngắm, object-fit: cover).
+        // Không có camera thì không chụp được (không dùng ảnh demo).
+        function capture() {
+            var saved = false;
+            try {
+                if (!useCamera) return false;
+                var src = video;
+                var sw = video.videoWidth;
+                var sh = video.videoHeight;
+                var box = shotArea.getBoundingClientRect();
+                if (!sw || !sh || box.width < 2 || box.height < 2) return false;
+                var ar = box;
+
+                var scale = Math.max(box.width / sw, box.height / sh);
+                var offX = (box.width - sw * scale) / 2;
+                var offY = (box.height - sh * scale) / 2;
+
+                var cx = (ar.left - box.left - offX) / scale;
+                var cy = (ar.top - box.top - offY) / scale;
+                var cw = ar.width / scale;
+                var ch = ar.height / scale;
+
+                if (cx < 0) { cw += cx; cx = 0; }
+                if (cy < 0) { ch += cy; cy = 0; }
+                if (cx + cw > sw) cw = sw - cx;
+                if (cy + ch > sh) ch = sh - cy;
+                if (cw < 2 || ch < 2) return false;
+
+                var outW = Math.round(Math.min(cw, 1920));
+                if (outW < 2) return false;
+                var outH = Math.round(outW * (ch / cw));
+                if (outH < 2) return false;
+                if (shotCanvas.width !== outW || shotCanvas.height !== outH) {
+                    shotCanvas.width = outW;
+                    shotCanvas.height = outH;
+                }
+                var ctx = shotCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+                if (!ctx) return false;
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, outW, outH);
+                if (useCamera) {
+                    cx = sw - cx - cw;
+                    ctx.translate(outW, 0);
+                    ctx.scale(-1, 1);
+                }
+                ctx.drawImage(src, cx, cy, cw, ch, 0, 0, outW, outH);
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                var imageData = ctx.getImageData(0, 0, outW, outH);
+                applyBeautyInPlace(imageData.data, outW, outH, {
+                    strength: 0.7,
+                    smooth: 0.75,
+                    pink: 0.65,
+                    blush: 0.55,
+                    lips: 0.7
+                });
+                ctx.putImageData(imageData, 0, 0);
+
+                try {
+                    photos[current] = shotCanvas.toDataURL('image/png');
+                } catch (e) {
+                    return false;
+                }
+                saved = !!photos[current];
+
+                playShutterSound();
+                flash.classList.remove('on');
+                void flash.offsetWidth;
+                flash.classList.add('on');
+
+                var next = photos.findIndex(function (p) { return !p; });
+                if (next !== -1) current = next;
+
+                renderSlots();
+            } catch (e) {
+                saved = false;
+            }
+            return saved;
+        }
+
+        showIdle();
+        renderSlots();
+    })();
+</script>
+</body>
+</html>
